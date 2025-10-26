@@ -1,12 +1,9 @@
+use std::ptr::copy_nonoverlapping;
+
 pub trait ActivationFunction {
     fn apply(&self, x: f32) -> f32;
     fn deriv(&self, x: f32) -> f32;
     fn apply_vector<const N: usize>(&self, x: &[f32; N], y: &mut [f32; N]) {
-        for i in 0..N {
-            y[i] = self.apply(x[i]);
-        }
-    }
-    fn deriv_vector<const N: usize>(&self, x: &[f32; N], y: &mut [f32; N]) {
         for i in 0..N {
             y[i] = self.apply(x[i]);
         }
@@ -23,9 +20,15 @@ impl ActivationFunction for Identity {
     fn deriv(&self, _: f32) -> f32 {
         1.0
     }
+
+    fn apply_vector<const N: usize>(&self, x: &[f32; N], y: &mut [f32; N]) {
+        unsafe {
+            copy_nonoverlapping(x.as_ptr(), y.as_mut_ptr(), N);
+        }
+    }
 }
 
-fn σ(x: f32) -> f32 {
+fn sigma(x: f32) -> f32 {
     1.0 / (1.0 + f32::exp(-x))
 }
 
@@ -33,11 +36,11 @@ fn σ(x: f32) -> f32 {
 pub struct Sigmoid;
 impl ActivationFunction for Sigmoid {
     fn apply(&self, x: f32) -> f32 {
-        σ(x)
+        sigma(x)
     }
 
     fn deriv(&self, x: f32) -> f32 {
-        σ(x) * (1.0 - σ(x))
+        sigma(x) * (1.0 - sigma(x))
     }
 }
 
