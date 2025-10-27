@@ -1,6 +1,6 @@
 use std::ptr::copy_nonoverlapping;
 
-pub trait ActivationFunction {
+pub trait ActivationFunction: Send + Sync {
     fn apply(&self, x: f32) -> f32;
     fn deriv(&self, x: f32) -> f32;
     fn apply_vector<const N: usize>(&self, x: &[f32; N], y: &mut [f32; N]) {

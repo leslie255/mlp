@@ -3,7 +3,7 @@ use std::{
     fmt::{self, Debug},
 };
 
-use crate::big_matrices::Vector;
+use crate::linear_algebra::Vector;
 
 /// A large matrix.
 /// M: Number of rows / height of matrix.

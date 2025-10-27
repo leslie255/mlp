@@ -1,11 +1,33 @@
 pub mod activation;
-pub mod big_matrices;
+pub mod linear_algebra;
 
 use std::ops::{Deref as _, DerefMut as _};
 
 use activation::*;
-use big_matrices::*;
+use linear_algebra::*;
 use rand::{Rng, distr::uniform::SampleRange};
+
+pub trait UsizeList {}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct UsizeListItem<const VALUE: usize, NextNode: UsizeList> {
+    _marker: NextNode,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct UsizeListEnd;
+
+macro_rules! list {
+    [] => {
+        HyperListEnd
+    };
+    [$value:expr] => {
+        HyperListItem<$value, HyperListEnd>
+    };
+    [$value:expr, $($xs:tt)*] => {
+        HyperListItem<$value, list!($($xs)*)>
+    };
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct NeuralNetwork<const N_0: usize, const N_1: usize, Phi: ActivationFunction = Identity> {
@@ -104,27 +126,46 @@ impl<const N_0: usize, const N_1: usize, Phi: ActivationFunction> NeuralNetwork<
 }
 
 fn main() {
+    // let training_data: &[([f32; _], [f32; _])] = &[
+    //     ([0., 0.], [1., 0., 0., 1.]),
+    //     ([0., 1.], [1., 0., 0., 1.]),
+    //     ([1., 0.], [1., 0., 0., 1.]),
+    //     ([1., 1.], [0., 1., 1., 0.]),
+    // ];
+
     let training_data: &[([f32; _], [f32; _])] = &[
-        ([0., 0.], [1., 0., 0., 1.]),
-        ([0., 1.], [1., 0., 0., 1.]),
-        ([1., 0.], [1., 0., 0., 1.]),
-        ([1., 1.], [0., 1., 1., 0.]),
+        ([0., 0.], [0.]),
+        ([0., 1.], [1.]),
+        ([1., 0.], [1.]),
+        ([1., 1.], [0.]),
     ];
 
-    let mut nn = NeuralNetwork::<2, 4, Sigmoid>::default();
-    let mut deriv_buffer = NeuralNetworkDeriv::<2, 4>::default();
+    let mut nn = NeuralNetwork::<2, 1, Sigmoid>::default();
+    let mut deriv_buffer = NeuralNetworkDeriv::<2, 1>::default();
     let n_epochs = 10_000_000;
 
-    println!("Training ({n_epochs} rounds):");
+    println!("# Training ({n_epochs} rounds):");
     for i_epoch in 0..n_epochs {
-        let loss = nn.train(&mut deriv_buffer, training_data, 0.2);
+        let loss = nn.train(&mut deriv_buffer, training_data, 0.4);
         if i_epoch % (n_epochs / 20) == 0 || i_epoch == (n_epochs - 1) {
             let percent = i_epoch as f32 / n_epochs as f32 * 100.0;
             println!("[{percent:.0}%] L = {loss}");
         }
     }
 
-    println!("Result:");
+    println!("# Result Network Parameters:");
+    println!("W = [");
+    for row in nn.w.iter_rows() {
+        print!("    ");
+        for element in row.iter() {
+            print!("{element}, ");
+        }
+        println!();
+    }
+    println!("]");
+    println!("b = {:?}", nn.b);
+
+    println!("# Result:");
     for (i, (x_i, y_i)) in training_data.iter().enumerate() {
         let x_i = Vector::new_ref(x_i);
         let y_i = Vector::new_ref(y_i);
@@ -132,15 +173,4 @@ fn main() {
         let a = &nn.a_1;
         println!("[i = {i}] x = {x_i:?}, a(x) = {a:.04?}, y = {y_i:?}",)
     }
-
-    println!("Network Parameters:");
-    println!("W = [");
-    for row in nn.w.iter_rows() {
-        for element in row.iter() {
-            print!("    {element}, ");
-        }
-        println!();
-    }
-    println!("]");
-    println!("b = {:?}", nn.b);
 }
