@@ -1,10 +1,16 @@
-use std::ptr::copy_nonoverlapping;
+use std::{any::type_name_of_val, ptr::copy_nonoverlapping};
 
-pub trait ActivationFunction: Send + Sync {
+pub trait ActivationFunction: Send + Sync + 'static {
+    fn name(&self) -> &'static str {
+        type_name_of_val(self)
+    }
+
     fn apply(&self, x: f32) -> f32;
+
     fn deriv(&self, x: f32) -> f32;
-    fn apply_vector<const N: usize>(&self, x: &[f32; N], y: &mut [f32; N]) {
-        for i in 0..N {
+
+    fn apply_vector(&self, x: &[f32], y: &mut [f32]) {
+        for i in 0..x.len() {
             y[i] = self.apply(x[i]);
         }
     }
@@ -13,6 +19,10 @@ pub trait ActivationFunction: Send + Sync {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Identity;
 impl ActivationFunction for Identity {
+    fn name(&self) -> &'static str {
+        "identity"
+    }
+
     fn apply(&self, x: f32) -> f32 {
         x
     }
@@ -21,9 +31,10 @@ impl ActivationFunction for Identity {
         1.0
     }
 
-    fn apply_vector<const N: usize>(&self, x: &[f32; N], y: &mut [f32; N]) {
+    fn apply_vector(&self, x: &[f32], y: &mut [f32]) {
+        let len = x.len().min(y.len());
         unsafe {
-            copy_nonoverlapping(x.as_ptr(), y.as_mut_ptr(), N);
+            copy_nonoverlapping(x.as_ptr(), y.as_mut_ptr(), len);
         }
     }
 }
@@ -35,6 +46,10 @@ fn sigma(x: f32) -> f32 {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Sigmoid;
 impl ActivationFunction for Sigmoid {
+    fn name(&self) -> &'static str {
+        "sigmoid"
+    }
+
     fn apply(&self, x: f32) -> f32 {
         sigma(x)
     }
@@ -47,6 +62,10 @@ impl ActivationFunction for Sigmoid {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Tanh;
 impl ActivationFunction for Tanh {
+    fn name(&self) -> &'static str {
+        "tanh"
+    }
+
     fn apply(&self, x: f32) -> f32 {
         f32::tanh(x)
     }
