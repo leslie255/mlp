@@ -1,20 +1,10 @@
-#![feature(allocator_api)]
-
-pub mod activation;
-pub mod gym;
-pub mod nn;
-pub mod pretty_print;
-
 use std::{
     fs::{self, OpenOptions},
     io::{BufWriter, Write as _},
     slice,
 };
 
-use crate::{
-    activation::*,
-    nn::{LayerDescription, NeuralNetwork},
-};
+use mlp::{LayerDescription, NeuralNetwork, Sigmoid};
 
 use faer::prelude::*;
 
@@ -26,7 +16,7 @@ fn train<const N_LAYERS: usize>(
 ) {
     let mut gym = nn.go_to_gym();
 
-    let eta = 128.0;
+    let eta = 0.2;
     let n_epochs = 1_000_000usize;
     let n_records = 1000usize;
     let mut loss_records: Vec<(usize, f32)> =
@@ -92,7 +82,8 @@ fn main() {
     let mut nn = NeuralNetwork::new(
         2,
         [
-            LayerDescription::new(2, Sigmoid),
+            LayerDescription::new(8, Sigmoid),
+            LayerDescription::new(8, Sigmoid),
             LayerDescription::new(1, Sigmoid),
         ],
     );

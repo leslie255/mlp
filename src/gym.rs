@@ -1,14 +1,10 @@
 #![allow(dead_code)]
 
-mod deriv_buffer;
-
 use std::alloc::Allocator;
 
 use faer::prelude::*;
 
-pub use deriv_buffer::*;
-
-use crate::nn::NeuralNetwork;
+use crate::{NeuralNetwork, NeuralNetworkDerivs};
 
 pub struct Gym<'a, const N_LAYERS: usize, A: Allocator> {
     nn: &'a mut NeuralNetwork<N_LAYERS, A>,

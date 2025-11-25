@@ -46,6 +46,7 @@ impl<const N_LAYERS: usize, A: Allocator> NeuralNetworkDerivs<N_LAYERS, A> {
     ///
     /// - `offset..(offset + n_cols * n_rows)` must be within allocation.
     /// - No other references to this region exist, due to Rust's `&mut` aliasing rules.
+    #[expect(dead_code)]
     unsafe fn mat_ref_unchecked(
         &self,
         offset: usize,

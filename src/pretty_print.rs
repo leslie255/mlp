@@ -2,7 +2,7 @@ use std::fmt::{self, Debug, Display};
 
 use faer::prelude::*;
 
-use crate::nn::LayerMut;
+use crate::LayerMut;
 
 pub struct PrettyPrintParams<'a> {
     i_layer: usize,
