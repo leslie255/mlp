@@ -6,22 +6,19 @@ use faer::prelude::*;
 
 use crate::{NeuralNetwork, NeuralNetworkDerivs};
 
-pub struct Gym<'a, const N_LAYERS: usize, A: Allocator> {
-    nn: &'a mut NeuralNetwork<N_LAYERS, A>,
-    deriv_buffer: NeuralNetworkDerivs<N_LAYERS, A>,
+pub struct Gym<'a, A: Allocator> {
+    nn: &'a mut NeuralNetwork<A>,
+    deriv_buffer: NeuralNetworkDerivs<A>,
 }
 
-impl<'a, const N_LAYERS: usize, A: Allocator> Gym<'a, N_LAYERS, A> {
-    pub fn new(
-        nn: &'a mut NeuralNetwork<N_LAYERS, A>,
-        deriv_buffer: NeuralNetworkDerivs<N_LAYERS, A>,
-    ) -> Self {
+impl<'a, A: Allocator> Gym<'a, A> {
+    pub fn new(nn: &'a mut NeuralNetwork<A>, deriv_buffer: NeuralNetworkDerivs<A>) -> Self {
         Self { nn, deriv_buffer }
     }
 
     pub fn finish(self) {}
 
-    pub fn nn<'b, 'x>(&'b mut self) -> &'x mut NeuralNetwork<N_LAYERS, A>
+    pub fn nn<'b, 'x>(&'b mut self) -> &'x mut NeuralNetwork<A>
     where
         'a: 'x,
         'b: 'x,
@@ -42,7 +39,8 @@ impl<'a, const N_LAYERS: usize, A: Allocator> Gym<'a, N_LAYERS, A> {
     fn train_sample(&mut self, x_i: ColRef<f32>, y_i: ColRef<f32>) -> f32 {
         self.nn.forward(x_i);
         let mut l_i = 0.0f32;
-        for u in (1..=N_LAYERS).rev() {
+        let n_layers = self.nn.n_layers();
+        for u in (1..=n_layers).rev() {
             let mut deriv_buffer_layer = self.deriv_buffer.get_layer_mut(u).unwrap();
             let a_prev = if u == 1 {
                 x_i
@@ -60,7 +58,7 @@ impl<'a, const N_LAYERS: usize, A: Allocator> Gym<'a, N_LAYERS, A> {
             let z = nn_layer.z;
             let phi = nn_layer.phi;
             for k in 0..nn_layer.n {
-                let dak = if u == N_LAYERS {
+                let dak = if u == n_layers {
                     let ak = nn_layer.a[k];
                     let yk = y_i[k];
                     let e_k = ak - yk;
@@ -88,7 +86,7 @@ impl<'a, const N_LAYERS: usize, A: Allocator> Gym<'a, N_LAYERS, A> {
     }
 
     fn apply_derivs(&mut self, eta: f32, n: f32) {
-        for u in 1..=N_LAYERS {
+        for u in 1..=self.nn.n_layers() {
             let mut nn_layer = self.nn.get_layer_mut(u).unwrap();
             let mut deriv_layer = self.deriv_buffer.get_layer_mut(u).unwrap();
             zip!(&mut nn_layer.w, &mut deriv_layer.dw).for_each(|unzip!(w, dw)| {

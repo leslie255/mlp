@@ -1,6 +1,5 @@
 use std::{
     alloc::{Allocator, Global},
-    array,
     fmt::{self, Debug},
     iter,
     ptr::{NonNull, copy_nonoverlapping, write_bytes},
@@ -9,6 +8,8 @@ use std::{
 use faer::{Accum, linalg::matmul::matmul, prelude::*};
 
 use rand::{Rng, distr::uniform::SampleRange, rngs::ThreadRng};
+
+use derive_more::{Display, Error};
 
 use crate::{ActivationFunction, ColPtr, Gym, MatPtr, NeuralNetworkDerivs, PrettyPrintParams};
 
@@ -61,11 +62,17 @@ impl RawLayer {
     }
 }
 
-struct Storage<A: Allocator = Global> {
+struct Storage<A: Allocator> {
     layers: Box<[RawLayer], A>,
     data: Box<[f32], A>,
     /// Start of the region in `data` where storage of activation results (z and a) begin.
     za_start: usize,
+}
+
+#[derive(Debug, Clone, Display, Error)]
+pub enum LoadParamsError {
+    #[display("incorrect length")]
+    IncorrectLength,
 }
 
 impl<A: Allocator> Storage<A> {
@@ -158,9 +165,9 @@ impl<A: Allocator> Storage<A> {
         &self.data[0..self.za_start]
     }
 
-    fn load_params(&mut self, buffer: &[f32]) -> Result<(), ()> {
+    fn load_params(&mut self, buffer: &[f32]) -> Result<(), LoadParamsError> {
         if buffer.len() != self.za_start {
-            Err(())
+            Err(LoadParamsError::IncorrectLength)
         } else {
             unsafe {
                 copy_nonoverlapping(buffer.as_ptr(), self.data.as_mut_ptr(), self.za_start);
@@ -170,7 +177,7 @@ impl<A: Allocator> Storage<A> {
     }
 }
 
-pub struct NeuralNetwork<const N_LAYERS: usize, A: Allocator = Global> {
+pub struct NeuralNetwork<A: Allocator = Global> {
     n_layers: usize,
     n_inputs: usize,
     n_outputs: usize,
@@ -178,14 +185,16 @@ pub struct NeuralNetwork<const N_LAYERS: usize, A: Allocator = Global> {
     storage: Storage<A>,
 }
 
-impl<const N_LAYERS: usize> NeuralNetwork<N_LAYERS, Global> {
-    pub fn new(n_inputs: usize, architecture: [LayerDescription; N_LAYERS]) -> Self {
-        Self::new_in(Global, n_inputs, architecture)
-    }
+impl NeuralNetwork<Global> {
+    pub fn new<const N_LAYERS: usize>(
+        n_inputs: usize,
+        layer_descriptions: [LayerDescription; N_LAYERS],
+    ) -> Self {
+        Self::new_in(Global, n_inputs, layer_descriptions) }
 }
 
-impl<const N_LAYERS: usize, A: Allocator> NeuralNetwork<N_LAYERS, A> {
-    pub fn new_in(
+impl<A: Allocator> NeuralNetwork<A> {
+    pub fn new_in<const N_LAYERS: usize>(
         alloc: A,
         n_inputs: usize,
         layer_descriptions: [LayerDescription; N_LAYERS],
@@ -208,11 +217,14 @@ impl<const N_LAYERS: usize, A: Allocator> NeuralNetwork<N_LAYERS, A> {
         }
     }
 
-    pub fn go_to_gym(&mut self) -> Gym<'_, N_LAYERS, A>
+    pub fn go_to_gym(&mut self) -> Gym<'_, A>
     where
         A: Clone,
     {
-        let layer_sizes: [usize; N_LAYERS] = array::from_fn(|i| self.layer_size(i + 1).unwrap());
+        let mut layer_sizes = Vec::with_capacity_in(self.n_layers(), self.alloc.clone());
+        for u in 1..=self.n_layers() {
+            layer_sizes.push(self.layer_size(u).unwrap());
+        }
         Gym::new(
             self,
             NeuralNetworkDerivs::new_in(self.alloc.clone(), self.n_inputs, layer_sizes),
@@ -254,7 +266,7 @@ impl<const N_LAYERS: usize, A: Allocator> NeuralNetwork<N_LAYERS, A> {
         b_range: impl SampleRange<f32> + Clone,
     ) {
         let mut rng = ThreadRng::default();
-        for i_layer in 1..=N_LAYERS {
+        for i_layer in 1..=self.n_layers() {
             let layer = self.get_layer_mut(i_layer).unwrap();
             for column in layer.w.col_iter_mut() {
                 for element in column.iter_mut() {
@@ -302,7 +314,7 @@ impl<const N_LAYERS: usize, A: Allocator> NeuralNetwork<N_LAYERS, A> {
 
     /// # Safety
     ///
-    /// - `i_layer` must be in range of `1..n_layers`
+    /// - `i_layer` must be in range of `1..=n_layers`
     pub unsafe fn get_a_unchecked(&self, i_layer: usize) -> ColPtr<f32> {
         unsafe { self.storage.raw_layer_unchecked(i_layer).a }
     }
@@ -338,8 +350,7 @@ impl<const N_LAYERS: usize, A: Allocator> NeuralNetwork<N_LAYERS, A> {
 
     /// Load all parameters from a buffer of the format produced by `self.params_buffer()`.
     /// `Err` if buffer is of incorrect size.
-    #[allow(clippy::result_unit_err)]
-    pub fn load_params(&mut self, buffer: &[f32]) -> Result<(), ()> {
+    pub fn load_params(&mut self, buffer: &[f32]) -> Result<(), LoadParamsError> {
         self.storage.load_params(buffer)
     }
 }

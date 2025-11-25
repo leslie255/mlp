@@ -1,19 +1,12 @@
 use std::{
-    fs::{self, OpenOptions},
-    io::{BufWriter, Write as _},
-    slice,
+    error::Error, fs::{self, OpenOptions}, io::{BufWriter, Write as _}
 };
 
 use mlp::{LayerDescription, NeuralNetwork, Sigmoid};
 
 use faer::prelude::*;
 
-fn train<const N_LAYERS: usize>(
-    training_data: &[(&[f32], &[f32])],
-    nn: &mut NeuralNetwork<N_LAYERS>,
-    log: bool,
-    record: bool,
-) {
+fn train(training_data: &[(&[f32], &[f32])], nn: &mut NeuralNetwork, log: bool, record: bool) {
     let mut gym = nn.go_to_gym();
 
     let eta = 0.2;
@@ -53,21 +46,16 @@ fn train<const N_LAYERS: usize>(
     gym.finish();
 }
 
-fn load_params<const N_LAYERS: usize>(nn: &mut NeuralNetwork<N_LAYERS>) -> Result<(), ()> {
-    let bytes = fs::read("./params.bin").map_err(|_| ())?;
-    if bytes.len() % size_of::<f32>() != 0 {
-        return Err(());
-    };
-    let buffer: &[f32] =
-        unsafe { slice::from_raw_parts(bytes.as_ptr().cast(), bytes.len() / size_of::<f32>()) };
-    nn.load_params(buffer)
+fn load_params(nn: &mut NeuralNetwork) -> Result<(), Box<dyn Error>> {
+    let bytes = fs::read("./params.bin")?;
+    let buffer: &[f32] = bytemuck::cast_slice(&bytes);
+    nn.load_params(buffer)?;
+    Ok(())
 }
 
-fn dump_params<const N_LAYERS: usize>(nn: &NeuralNetwork<N_LAYERS>) -> Result<(), ()> {
+fn dump_params(nn: &NeuralNetwork) -> Result<(), ()> {
     let buffer = nn.params_buffer();
-    #[allow(clippy::manual_slice_size_calculation)]
-    let bytes: &[u8] =
-        unsafe { slice::from_raw_parts(buffer.as_ptr().cast(), buffer.len() * size_of::<f32>()) };
+    let bytes: &[u8] = bytemuck::cast_slice(buffer);
     fs::write("./params.bin", bytes).map_err(|_| ())
 }
 
@@ -82,8 +70,7 @@ fn main() {
     let mut nn = NeuralNetwork::new(
         2,
         [
-            LayerDescription::new(8, Sigmoid),
-            LayerDescription::new(8, Sigmoid),
+            LayerDescription::new(2, Sigmoid),
             LayerDescription::new(1, Sigmoid),
         ],
     );

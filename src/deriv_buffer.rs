@@ -3,42 +3,42 @@ use std::{alloc::Allocator, slice};
 use faer::prelude::*;
 
 /// Buffer for performing gradient descent.
-pub struct NeuralNetworkDerivs<const N_LAYERS: usize, A: Allocator> {
-    buffer: Box<[f32], A>,
+pub struct NeuralNetworkDerivs<A: Allocator> {
     n_inputs: usize,
+    n_layers: usize,
     /// Number of neurons per layer.
-    layer_sizes: [usize; N_LAYERS],
+    layer_sizes: Box<[usize], A>,
     /// The starting points of each layer in the buffer.
     /// (in f32 indices, not bytes).
-    layer_offsets: [usize; N_LAYERS],
+    layer_offsets: Box<[usize], A>,
+    buffer: Box<[f32], A>,
 }
 
-impl<const N_LAYERS: usize, A: Allocator> NeuralNetworkDerivs<N_LAYERS, A> {
-    pub fn new_in(allocator: A, n_inputs: usize, layer_sizes: [usize; N_LAYERS]) -> Self {
-        const {
-            assert!(
-                N_LAYERS != 0,
-                "Neural network must have at least one non-input layer"
-            );
-        }
+impl<A: Allocator> NeuralNetworkDerivs<A> {
+    pub fn new_in(alloc: A, n_inputs: usize, layer_sizes: Vec<usize, A>) -> Self
+    where
+        A: Clone,
+    {
         // Calculate allocation size and layers layout.
         let mut allocation_size = 0usize;
-        let mut layer_offsets = [0usize; N_LAYERS];
+        let mut layer_offsets: Vec<usize, A> =
+            Vec::with_capacity_in(layer_sizes.len(), alloc.clone());
         let mut n_previous = n_inputs; // number of neurons in the previous layer
-        for (i_layer, &n) in layer_sizes.iter().enumerate() {
-            layer_offsets[i_layer] = allocation_size;
+        for &n in &layer_sizes {
+            layer_offsets.push(allocation_size);
             allocation_size += n * n_previous; // weight
             allocation_size += n; // bias
             allocation_size += n; // da
             n_previous = n;
         }
         let buffer: Box<[f32], A> =
-            unsafe { Box::new_zeroed_slice_in(allocation_size, allocator).assume_init() };
+            unsafe { Box::new_zeroed_slice_in(allocation_size, alloc).assume_init() };
         Self {
             buffer,
             n_inputs,
-            layer_sizes,
-            layer_offsets,
+            n_layers: layer_sizes.len(),
+            layer_sizes: layer_sizes.into(),
+            layer_offsets: layer_offsets.into(),
         }
     }
 
@@ -124,7 +124,7 @@ impl<const N_LAYERS: usize, A: Allocator> NeuralNetworkDerivs<N_LAYERS, A> {
         'a: 'x,
         'b: 'x,
     {
-        if !(1..=N_LAYERS).contains(&u) {
+        if !(1..=self.n_layers).contains(&u) {
             return None;
         }
         let n = self.layer_size(u);
