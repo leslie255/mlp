@@ -39,7 +39,7 @@ impl Debug for LayerDescription {
 struct RawLayer {
     n_previous: usize,
     n: usize,
-    w: MatPtr,
+    w: MatPtr<f32>,
     b: ColPtr<f32>,
     phi: Box<dyn ActivationFunction>,
     z: ColPtr<f32>,
@@ -47,7 +47,7 @@ struct RawLayer {
 }
 
 impl RawLayer {
-    unsafe fn as_layer_mut(&self) -> LayerMut<'_> {
+    unsafe fn as_layer_mut(&mut self) -> LayerMut<'_> {
         unsafe {
             LayerMut {
                 n_previous: self.n_previous,
@@ -64,8 +64,8 @@ impl RawLayer {
 
 struct Storage<A: Allocator> {
     layers: Box<[RawLayer], A>,
-    data: Box<[f32], A>,
-    /// Start of the region in `data` where storage of activation results (z and a) begin.
+    buffer: Box<[f32], A>,
+    /// Start of the region in `buffer` where storage of activation results (z and a) begin.
     za_start: usize,
 }
 
@@ -86,27 +86,28 @@ impl<A: Allocator> Storage<A> {
     {
         let (n_floats, za_start) = {
             let mut allocation_size = 0usize;
-            let mut activation_result_start = 0usize;
+            let mut za_start = 0usize;
             let mut n_previous = n_inputs;
             for layer_description in &layer_descriptions {
                 let n = layer_description.n_neurons;
                 allocation_size += Self::size_of_layer(n_previous, n);
-                activation_result_start += Self::size_of_layer_params(n_previous, n);
+                za_start += Self::size_of_layer_params(n_previous, n);
                 n_previous = n;
             }
-            (allocation_size, activation_result_start)
+            (allocation_size, za_start)
         };
         let n_layers = layer_descriptions.len();
-        let data: Box<[f32], A> = {
-            let mut data = Box::new_uninit_slice_in(n_floats, alloc.clone());
+        let buffer: Box<[f32], A> = {
+            let mut buffer = Box::new_uninit_slice_in(n_floats, alloc.clone());
+            bytemuck::fill_zeroes(&mut buffer);
             unsafe {
-                write_bytes(data.as_mut_ptr(), 0u8, n_floats);
-                data.assume_init()
+                write_bytes(buffer.as_mut_ptr(), 0u8, n_floats);
+                buffer.assume_init()
             }
         };
         let layers: Box<[RawLayer], A> = {
             let mut layers = Box::new_uninit_slice_in(n_layers, alloc);
-            let data: NonNull<f32> = NonNull::from(data.as_ref()).cast();
+            let data: NonNull<f32> = NonNull::from(buffer.as_ref()).cast();
             let mut counter_params = 0usize;
             let mut counter_za = za_start;
             let mut n_previous = n_inputs;
@@ -136,7 +137,7 @@ impl<A: Allocator> Storage<A> {
         };
         Self {
             layers,
-            data,
+            buffer,
             za_start,
         }
     }
@@ -157,12 +158,20 @@ impl<A: Allocator> Storage<A> {
         self.layers.get(i_layer.checked_sub(1)?)
     }
 
+    fn raw_layer_mut(&mut self, i_layer: usize) -> Option<&mut RawLayer> {
+        self.layers.get_mut(i_layer.checked_sub(1)?)
+    }
+
     unsafe fn raw_layer_unchecked(&self, i_layer: usize) -> &RawLayer {
         unsafe { self.layers.get_unchecked(i_layer.unchecked_sub(1)) }
     }
 
+    unsafe fn raw_layer_unchecked_mut(&mut self, i_layer: usize) -> &mut RawLayer {
+        unsafe { self.layers.get_unchecked_mut(i_layer.unchecked_sub(1)) }
+    }
+
     fn params_buffer(&self) -> &[f32] {
-        &self.data[0..self.za_start]
+        &self.buffer[0..self.za_start]
     }
 
     fn load_params(&mut self, buffer: &[f32]) -> Result<(), LoadParamsError> {
@@ -170,7 +179,7 @@ impl<A: Allocator> Storage<A> {
             Err(LoadParamsError::IncorrectLength)
         } else {
             unsafe {
-                copy_nonoverlapping(buffer.as_ptr(), self.data.as_mut_ptr(), self.za_start);
+                copy_nonoverlapping(buffer.as_ptr(), self.buffer.as_mut_ptr(), self.za_start);
             }
             Ok(())
         }
@@ -190,7 +199,8 @@ impl NeuralNetwork<Global> {
         n_inputs: usize,
         layer_descriptions: [LayerDescription; N_LAYERS],
     ) -> Self {
-        Self::new_in(Global, n_inputs, layer_descriptions) }
+        Self::new_in(Global, n_inputs, layer_descriptions)
+    }
 }
 
 impl<A: Allocator> NeuralNetwork<A> {
@@ -250,14 +260,28 @@ impl<A: Allocator> NeuralNetwork<A> {
 
     /// Returns `None` if `i_layer` is not in `1..=n_layers`.
     #[allow(unused_variables)]
-    pub fn get_layer_mut<'a, 'b, 'x>(&'a mut self, i_layer: usize) -> Option<LayerMut<'x>>
+    pub fn layer_mut<'a, 'b, 'x>(&'a mut self, i_layer: usize) -> Option<LayerMut<'x>>
     where
         'a: 'x,
         'b: 'x,
     {
-        let raw_layer = self.storage.raw_layer(i_layer)?;
-        // Safety: `self` is under `&mut` reference.
+        let raw_layer = self.storage.raw_layer_mut(i_layer)?;
         Some(unsafe { raw_layer.as_layer_mut() })
+    }
+
+    /// # Safety
+    ///
+    /// `i_layer` must be in `1..n_layers`.
+    #[allow(unused_variables)]
+    pub unsafe fn layer_unchecked_mut<'a, 'b, 'x>(&'a mut self, i_layer: usize) -> LayerMut<'x>
+    where
+        'a: 'x,
+        'b: 'x,
+    {
+        unsafe {
+            let raw_layer = self.storage.raw_layer_unchecked_mut(i_layer);
+            raw_layer.as_layer_mut()
+        }
     }
 
     pub fn randomize(
@@ -267,7 +291,7 @@ impl<A: Allocator> NeuralNetwork<A> {
     ) {
         let mut rng = ThreadRng::default();
         for i_layer in 1..=self.n_layers() {
-            let layer = self.get_layer_mut(i_layer).unwrap();
+            let layer = self.layer_mut(i_layer).unwrap();
             for column in layer.w.col_iter_mut() {
                 for element in column.iter_mut() {
                     *element = rng.random_range(w_range.clone());
@@ -293,7 +317,7 @@ impl<A: Allocator> NeuralNetwork<A> {
             } else {
                 unsafe { self.get_a_unchecked(i_layer - 1).as_col_ref() }
             };
-            let mut layer = self.get_layer_mut(i_layer).unwrap();
+            let mut layer = self.layer_mut(i_layer).unwrap();
             // z = w * a_prev;
             matmul(
                 layer.z.rb_mut(),
@@ -331,13 +355,13 @@ impl<A: Allocator> NeuralNetwork<A> {
         Some(unsafe { raw_layer.z.as_col_ref() })
     }
 
-    pub fn get_bias(&self, i_layer: usize) -> Option<ColRef<'_, f32>> {
+    pub fn get_b(&self, i_layer: usize) -> Option<ColRef<'_, f32>> {
         let raw_layer = self.storage.raw_layer(i_layer)?;
         // Safety: `self` is under `&` reference.
         Some(unsafe { raw_layer.b.as_col_ref() })
     }
 
-    pub fn get_weight(&self, i_layer: usize) -> Option<MatRef<'_, f32>> {
+    pub fn get_w(&self, i_layer: usize) -> Option<MatRef<'_, f32>> {
         let raw_layer = self.storage.raw_layer(i_layer)?;
         // Safety: `self` is under `&` reference.
         Some(unsafe { raw_layer.w.as_mat_ref() })

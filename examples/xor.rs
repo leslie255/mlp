@@ -1,8 +1,10 @@
 use std::{
-    error::Error, fs::{self, OpenOptions}, io::{BufWriter, Write as _}
+    error::Error,
+    fs::{self, OpenOptions},
+    io::{BufWriter, Write as _},
 };
 
-use mlp::{LayerDescription, NeuralNetwork, Sigmoid};
+use mlp::{LayerDescription, NeuralNetwork, activation_functions::Sigmoid};
 
 use faer::prelude::*;
 

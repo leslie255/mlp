@@ -36,18 +36,17 @@ impl<'a, A: Allocator> Gym<'a, A> {
         loss / n
     }
 
-    fn train_sample(&mut self, x_i: ColRef<f32>, y_i: ColRef<f32>) -> f32 {
-        self.nn.forward(x_i);
+    fn train_sample(&mut self, x: ColRef<f32>, y: ColRef<f32>) -> f32 {
+        self.nn.forward(x);
         let mut l_i = 0.0f32;
         let n_layers = self.nn.n_layers();
         for u in (1..=n_layers).rev() {
-            let mut deriv_buffer_layer = self.deriv_buffer.get_layer_mut(u).unwrap();
-            let a_prev = if u == 1 {
-                x_i
-            } else {
-                unsafe { self.nn.get_a_unchecked(u - 1).as_col_ref() }
+            let mut deriv_buffer_layer = unsafe { self.deriv_buffer.layer_unchecked_mut(u) };
+            let a_prev = match u {
+                1 => x,
+                u => unsafe { self.nn.get_a_unchecked(u - 1).as_col_ref() },
             };
-            let nn_layer = self.nn.get_layer_mut(u).unwrap();
+            let nn_layer = unsafe { self.nn.layer_unchecked_mut(u) };
             if let Some(da_previous) = deriv_buffer_layer.da_previous.as_mut() {
                 for item in da_previous.rb_mut().iter_mut() {
                     *item = 0.0;
@@ -60,24 +59,20 @@ impl<'a, A: Allocator> Gym<'a, A> {
             for k in 0..nn_layer.n {
                 let dak = if u == n_layers {
                     let ak = nn_layer.a[k];
-                    let yk = y_i[k];
-                    let e_k = ak - yk;
+                    let e_k = ak - y[k];
                     l_i += e_k.powi(2);
                     e_k
                 } else {
                     da[k]
                 };
-                let zk = z[k];
-                let phi_deriv_zk = phi.deriv(zk);
+                let phi_deriv_zk = phi.deriv(z[k]);
                 let dbk = dak * phi_deriv_zk;
                 deriv_buffer_layer.db[k] += dbk;
                 for g in 0..nn_layer.n_previous {
-                    let a_prev_g = a_prev[g];
-                    let dwkg = dbk * a_prev_g;
+                    let dwkg = dbk * a_prev[g];
                     deriv_buffer_layer.dw[(k, g)] += dwkg;
                     if let Some(da_prev) = deriv_buffer_layer.da_previous.as_mut() {
-                        let da_prev_g = &mut da_prev[g];
-                        *da_prev_g += dak * phi_deriv_zk * w[(k, g)];
+                        da_prev[g] += dak * phi_deriv_zk * w[(k, g)];
                     }
                 }
             }
@@ -87,8 +82,8 @@ impl<'a, A: Allocator> Gym<'a, A> {
 
     fn apply_derivs(&mut self, eta: f32, n: f32) {
         for u in 1..=self.nn.n_layers() {
-            let mut nn_layer = self.nn.get_layer_mut(u).unwrap();
-            let mut deriv_layer = self.deriv_buffer.get_layer_mut(u).unwrap();
+            let mut nn_layer = self.nn.layer_mut(u).unwrap();
+            let mut deriv_layer = self.deriv_buffer.layer_mut(u).unwrap();
             zip!(&mut nn_layer.w, &mut deriv_layer.dw).for_each(|unzip!(w, dw)| {
                 *dw /= n;
                 *w -= eta * (*dw);
