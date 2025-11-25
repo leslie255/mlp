@@ -33,14 +33,14 @@ impl<'a, const N_LAYERS: usize, A: Allocator> Gym<'a, N_LAYERS, A> {
         self.nn
     }
 
-    pub fn train(&mut self, η: f32, training_data: &[(&[f32], &[f32])]) -> f32 {
+    pub fn train(&mut self, eta: f32, training_data: &[(&[f32], &[f32])]) -> f32 {
         let mut loss = 0.0f32;
         for (x_i, y_i) in training_data {
             loss += self.train_sample(ColRef::from_slice(x_i), ColRef::from_slice(y_i));
         }
-        let n_t = training_data.len() as f32;
-        self.apply_derivs(η, n_t);
-        loss / n_t
+        let n = training_data.len() as f32;
+        self.apply_derivs(eta, n);
+        loss / n
     }
 
     fn train_sample(&mut self, x_i: ColRef<f32>, y_i: ColRef<f32>) -> f32 {
@@ -48,7 +48,12 @@ impl<'a, const N_LAYERS: usize, A: Allocator> Gym<'a, N_LAYERS, A> {
         let mut l_i = 0.0f32;
         for u in (1..=N_LAYERS).rev() {
             let mut deriv_buffer_layer = self.deriv_buffer.get_layer_mut(u).unwrap();
-            let nn_layer = self.nn.get_layer_mut(Some(x_i), u).unwrap();
+            let a_prev = if u == 1 {
+                x_i
+            } else {
+                unsafe { self.nn.get_a_unchecked(u - 1).as_col_ref() }
+            };
+            let nn_layer = self.nn.get_layer_mut(u).unwrap();
             if let Some(da_previous) = deriv_buffer_layer.da_previous.as_mut() {
                 for item in da_previous.rb_mut().iter_mut() {
                     *item = 0.0;
@@ -57,7 +62,6 @@ impl<'a, const N_LAYERS: usize, A: Allocator> Gym<'a, N_LAYERS, A> {
             let da = deriv_buffer_layer.da;
             let w = nn_layer.w;
             let z = nn_layer.z;
-            let a_prev = nn_layer.a_previous.unwrap();
             let phi = nn_layer.phi;
             for k in 0..nn_layer.n {
                 let dak = if u == N_LAYERS {
@@ -87,17 +91,17 @@ impl<'a, const N_LAYERS: usize, A: Allocator> Gym<'a, N_LAYERS, A> {
         l_i
     }
 
-    fn apply_derivs(&mut self, η: f32, n: f32) {
+    fn apply_derivs(&mut self, eta: f32, n: f32) {
         for u in 1..=N_LAYERS {
-            let mut nn_layer = self.nn.get_layer_mut(None, u).unwrap();
+            let mut nn_layer = self.nn.get_layer_mut(u).unwrap();
             let mut deriv_layer = self.deriv_buffer.get_layer_mut(u).unwrap();
             zip!(&mut nn_layer.w, &mut deriv_layer.dw).for_each(|unzip!(w, dw)| {
                 *dw /= n;
-                *w -= η * (*dw)
+                *w -= eta * (*dw);
             });
             zip!(&mut nn_layer.b, &mut deriv_layer.db).for_each(|unzip!(b, db)| {
                 *db /= n;
-                *b -= η * (*db)
+                *b -= eta * (*db);
             });
         }
     }
