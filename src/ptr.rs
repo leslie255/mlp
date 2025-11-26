@@ -42,7 +42,7 @@ impl<T> ColPtr<T> {
     /// # Safety
     ///
     /// - `ptr` must be pointing to a beginning of a slice of `T` with at least `nrows` items
-    /// - this slice of `f32` must satisfy aliasing requirements for being cast into a `&'a`
+    /// - this slice of `T` must satisfy aliasing requirements for being cast into a `&'a`
     ///   reference
     pub const unsafe fn as_col_ref<'a>(self) -> ColRef<'a, T> {
         unsafe { ColRef::from_raw_parts(self.ptr.as_ptr(), self.nrows, 1) }
@@ -51,7 +51,7 @@ impl<T> ColPtr<T> {
     /// # Safety
     ///
     /// - `ptr` must be pointing to a beginning of a slice of `T` with at least `nrows` items
-    /// - this slice of `f32` must satisfy aliasing requirements for being cast into a `&'a mut`
+    /// - this slice of `T` must satisfy aliasing requirements for being cast into a `&'a mut`
     ///   reference
     pub const unsafe fn as_col_mut<'a>(self) -> ColMut<'a, T> {
         unsafe { ColMut::from_raw_parts_mut(self.ptr.as_ptr(), self.nrows, 1) }
@@ -100,11 +100,11 @@ impl<T> MatPtr<T> {
 
     /// # Safety
     ///
-    /// - `ptr` must be pointing to a beginning of a slice of `f32` with at least `nrows * ncols`
+    /// - `ptr` must be pointing to a beginning of a slice of `T` with at least `nrows * ncols`
     ///   items
-    /// - this slice of `f32` must satisfy aliasing requirements for being cast into a `&'a`
+    /// - this slice of `T` must satisfy aliasing requirements for being cast into a `&'a`
     ///   reference
-    pub const unsafe fn as_mat_ref<'a>(self) -> MatRef<'a, f32> {
+    pub const unsafe fn as_mat_ref<'a>(self) -> MatRef<'a, T> {
         unsafe {
             MatRef::from_raw_parts(
                 self.ptr.as_ptr().cast(),
@@ -118,11 +118,11 @@ impl<T> MatPtr<T> {
 
     /// # Safety
     ///
-    /// - `ptr` must be pointing to a beginning of a slice of `f32` with at least `nrows * ncols`
+    /// - `ptr` must be pointing to a beginning of a slice of `T` with at least `nrows * ncols`
     ///   items
-    /// - this slice of `f32` must satisfy aliasing requirements for being cast into a `&'a mut`
+    /// - this slice of `T` must satisfy aliasing requirements for being cast into a `&'a mut`
     ///   reference
-    pub const unsafe fn as_mat_mut<'a>(self) -> MatMut<'a, f32> {
+    pub const unsafe fn as_mat_mut<'a>(self) -> MatMut<'a, T> {
         unsafe {
             MatMut::from_raw_parts_mut(
                 self.ptr.as_ptr().cast(),

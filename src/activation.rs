@@ -1,17 +1,44 @@
-use std::any::type_name_of_val;
+use std::{
+    any::type_name,
+    fmt::{self, Debug},
+};
 
-pub trait ActivationFunction: Send + Sync + 'static {
-    fn name(&self) -> &'static str {
-        type_name_of_val(self)
+pub trait ActivationFunction<T>: Send + Sync + 'static {
+    fn name() -> &'static str {
+        type_name::<Self>()
     }
 
-    fn apply(&self, x: f32) -> f32;
+    fn apply(x: T) -> T;
 
-    fn deriv(&self, x: f32) -> f32;
+    fn deriv(x: T) -> T;
+}
 
-    fn apply_vector(&self, x: &[f32], y: &mut [f32]) {
-        for i in 0..x.len() {
-            y[i] = self.apply(x[i]);
+pub struct ActivationFunctionVTable<T> {
+    pub name: fn() -> &'static str,
+    pub apply: fn(T) -> T,
+    pub deriv: fn(T) -> T,
+}
+
+impl<T> Debug for ActivationFunctionVTable<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        Debug::fmt(&(self.name)(), f)
+    }
+}
+
+impl<T> Clone for ActivationFunctionVTable<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T> Copy for ActivationFunctionVTable<T> {}
+
+impl<T> ActivationFunctionVTable<T> {
+    pub(crate) fn new<Phi: ActivationFunction<T>>(_: Phi) -> Self {
+        Self {
+            name: Phi::name,
+            apply: Phi::apply,
+            deriv: Phi::deriv,
         }
     }
 }
@@ -19,63 +46,97 @@ pub trait ActivationFunction: Send + Sync + 'static {
 pub mod activation_functions {
     use super::ActivationFunction;
 
-    use std::ptr::copy_nonoverlapping;
-
     #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
     pub struct Identity;
-    impl ActivationFunction for Identity {
-        fn name(&self) -> &'static str {
+    impl ActivationFunction<f32> for Identity {
+        fn name() -> &'static str {
             "identity"
         }
 
-        fn apply(&self, x: f32) -> f32 {
+        fn apply(x: f32) -> f32 {
             x
         }
 
-        fn deriv(&self, _: f32) -> f32 {
+        fn deriv(_: f32) -> f32 {
             1.0
-        }
-
-        fn apply_vector(&self, x: &[f32], y: &mut [f32]) {
-            let len = x.len().min(y.len());
-            unsafe {
-                copy_nonoverlapping(x.as_ptr(), y.as_mut_ptr(), len);
-            }
         }
     }
 
-    fn sigma(x: f32) -> f32 {
+    fn sigmoid_f128(x: f128) -> f128 {
+        1.0 / (1.0 + f128::exp(-x))
+    }
+
+    fn sigmoid_f64(x: f64) -> f64 {
+        1.0 / (1.0 + f64::exp(-x))
+    }
+
+    fn sigmoid_f32(x: f32) -> f32 {
         1.0 / (1.0 + f32::exp(-x))
+    }
+
+    fn sigmoid_f16(x: f16) -> f16 {
+        1.0 / (1.0 + f16::exp(-x))
     }
 
     #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
     pub struct Sigmoid;
-    impl ActivationFunction for Sigmoid {
-        fn name(&self) -> &'static str {
+    impl ActivationFunction<f128> for Sigmoid {
+        fn name() -> &'static str {
             "sigmoid"
         }
-
-        fn apply(&self, x: f32) -> f32 {
-            sigma(x)
+        fn apply(x: f128) -> f128 {
+            sigmoid_f128(x)
         }
-
-        fn deriv(&self, x: f32) -> f32 {
-            sigma(x) * (1.0 - sigma(x))
+        fn deriv(x: f128) -> f128 {
+            sigmoid_f128(x) * (1.0 - sigmoid_f128(x))
+        }
+    }
+    impl ActivationFunction<f64> for Sigmoid {
+        fn name() -> &'static str {
+            "sigmoid"
+        }
+        fn apply(x: f64) -> f64 {
+            sigmoid_f64(x)
+        }
+        fn deriv(x: f64) -> f64 {
+            sigmoid_f64(x) * (1.0 - sigmoid_f64(x))
+        }
+    }
+    impl ActivationFunction<f32> for Sigmoid {
+        fn name() -> &'static str {
+            "sigmoid"
+        }
+        fn apply(x: f32) -> f32 {
+            sigmoid_f32(x)
+        }
+        fn deriv(x: f32) -> f32 {
+            sigmoid_f32(x) * (1.0 - sigmoid_f32(x))
+        }
+    }
+    impl ActivationFunction<f16> for Sigmoid {
+        fn name() -> &'static str {
+            "sigmoid"
+        }
+        fn apply(x: f16) -> f16 {
+            sigmoid_f16(x)
+        }
+        fn deriv(x: f16) -> f16 {
+            sigmoid_f16(x) * (1.0 - sigmoid_f16(x))
         }
     }
 
     #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
     pub struct Tanh;
-    impl ActivationFunction for Tanh {
-        fn name(&self) -> &'static str {
+    impl ActivationFunction<f32> for Tanh {
+        fn name() -> &'static str {
             "tanh"
         }
 
-        fn apply(&self, x: f32) -> f32 {
+        fn apply(x: f32) -> f32 {
             f32::tanh(x)
         }
 
-        fn deriv(&self, x: f32) -> f32 {
+        fn deriv(x: f32) -> f32 {
             1.0 - f32::tanh(x).powi(2)
         }
     }

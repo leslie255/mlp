@@ -7,18 +7,18 @@ use faer::prelude::*;
 use crate::{NeuralNetwork, NeuralNetworkDerivs};
 
 pub struct Gym<'a, A: Allocator> {
-    nn: &'a mut NeuralNetwork<A>,
+    nn: &'a mut NeuralNetwork<f32, A>,
     deriv_buffer: NeuralNetworkDerivs<A>,
 }
 
 impl<'a, A: Allocator> Gym<'a, A> {
-    pub fn new(nn: &'a mut NeuralNetwork<A>, deriv_buffer: NeuralNetworkDerivs<A>) -> Self {
+    pub fn new(nn: &'a mut NeuralNetwork<f32, A>, deriv_buffer: NeuralNetworkDerivs<A>) -> Self {
         Self { nn, deriv_buffer }
     }
 
     pub fn finish(self) {}
 
-    pub fn nn<'b, 'x>(&'b mut self) -> &'x mut NeuralNetwork<A>
+    pub fn nn<'b, 'x>(&'b mut self) -> &'x mut NeuralNetwork<f32, A>
     where
         'a: 'x,
         'b: 'x,
@@ -44,11 +44,9 @@ impl<'a, A: Allocator> Gym<'a, A> {
     ) -> f32 {
         let mut loss = 0.0f32;
         for &(x_i, y_i) in training_data {
-            let x_i = ColRef::from_slice(x_i);
-            let y_i = ColRef::from_slice(y_i);
             if CHECKED {
-                assert!(x_i.nrows() == self.nn().n_inputs());
-                assert!(x_i.ncols() == self.nn().n_outputs());
+                assert!(x_i.len() == self.nn().n_inputs());
+                assert!(x_i.len() == self.nn().n_outputs());
             }
             loss += unsafe { self.train_sample(x_i, y_i) };
         }
@@ -61,7 +59,7 @@ impl<'a, A: Allocator> Gym<'a, A> {
     ///
     /// - x must be number of inputs
     /// - y must be number of outputs
-    unsafe fn train_sample(&mut self, x: ColRef<f32>, y: ColRef<f32>) -> f32 {
+    unsafe fn train_sample(&mut self, x: &[f32], y: &[f32]) -> f32 {
         self.nn.forward(x);
         let mut l_i = 0.0f32;
         let n_layers = self.nn.n_layers();
@@ -69,7 +67,7 @@ impl<'a, A: Allocator> Gym<'a, A> {
             for u in (1..=n_layers).rev() {
                 let mut deriv_buffer_layer = self.deriv_buffer.layer_unchecked_mut(u);
                 let a_prev = match u {
-                    1 => x,
+                    1 => ColRef::from_slice(x),
                     u => self.nn.get_a_unchecked(u - 1).as_col_ref(),
                 };
                 let nn_layer = self.nn.layer_unchecked_mut(u);
@@ -93,7 +91,7 @@ impl<'a, A: Allocator> Gym<'a, A> {
                         *da.rb().get_unchecked(k)
                     };
                     let zk = *z.rb().get_unchecked(k);
-                    let phi_deriv_zk = phi.deriv(zk);
+                    let phi_deriv_zk = (phi.deriv)(zk);
                     let dbk = dak * phi_deriv_zk;
                     *deriv_buffer_layer.db.rb_mut().get_mut_unchecked(k) += dbk;
                     for g in 0..nn_layer.n_previous {

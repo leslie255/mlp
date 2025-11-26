@@ -15,7 +15,7 @@ fn time(f: impl FnOnce()) -> Duration {
     after.duration_since(before)
 }
 
-fn train(training_data: &[(&[f32], &[f32])], nn: &mut NeuralNetwork, log: bool, record: bool) {
+fn train(training_data: &[(&[f32], &[f32])], nn: &mut NeuralNetwork<f32>, log: bool, record: bool) {
     let mut gym = nn.go_to_gym();
 
     let eta = 0.2;
@@ -59,14 +59,14 @@ fn train(training_data: &[(&[f32], &[f32])], nn: &mut NeuralNetwork, log: bool, 
     gym.finish();
 }
 
-fn load_params(nn: &mut NeuralNetwork) -> Result<(), Box<dyn Error>> {
+fn load_params(nn: &mut NeuralNetwork<f32>) -> Result<(), Box<dyn Error>> {
     let bytes = fs::read("./params.bin")?;
     let buffer: &[f32] = bytemuck::cast_slice(&bytes);
     nn.load_params(buffer)?;
     Ok(())
 }
 
-fn dump_params(nn: &NeuralNetwork) -> Result<(), ()> {
+fn dump_params(nn: &NeuralNetwork<f32>) -> Result<(), ()> {
     let buffer = nn.params_buffer();
     let bytes: &[u8] = bytemuck::cast_slice(buffer);
     fs::write("./params.bin", bytes).map_err(|_| ())

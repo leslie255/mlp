@@ -1,4 +1,4 @@
-#![feature(allocator_api)]
+#![feature(allocator_api, f16, f128)]
 
 pub use faer;
 

@@ -4,29 +4,35 @@ use faer::prelude::*;
 
 use crate::LayerMut;
 
-pub struct PrettyPrintParams<'a> {
+pub struct PrettyPrintParams<'a, T> {
     i_layer: usize,
-    layer: &'a LayerMut<'a>,
+    layer: &'a LayerMut<'a, T>,
 }
 
-impl<'a> PrettyPrintParams<'a> {
-    pub fn new(i_layer: usize, layer: &'a LayerMut<'a>) -> Self {
+impl<'a, T> PrettyPrintParams<'a, T> {
+    pub(crate) fn new(i_layer: usize, layer: &'a LayerMut<'a, T>) -> Self {
         Self { i_layer, layer }
     }
 }
 
-impl Debug for PrettyPrintParams<'_> {
+impl<T> Debug for PrettyPrintParams<'_, T>
+where
+    T: Display + Default + PartialOrd + Copy + 'static,
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         Display::fmt(self, f)
     }
 }
 
-impl Display for PrettyPrintParams<'_> {
+impl<T> Display for PrettyPrintParams<'_, T>
+where
+    T: Display + Default + PartialOrd + Copy + 'static,
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let w = self.layer.w.rb();
         let b = self.layer.b.rb();
         let center_line = self.layer.n / 2;
-        let phi = self.layer.phi.name();
+        let phi = (self.layer.phi.name)();
         let i_layer = self.i_layer;
         let i_layer_length = ((i_layer as f32).log10() + 1.0) as usize;
         let i_previous_layer_length = match i_layer {
@@ -45,10 +51,10 @@ impl Display for PrettyPrintParams<'_> {
             write!(f, "[")?;
             let mut iter = w.row(i_line).iter();
             while let Some(&element) = iter.next() {
-                if element.is_sign_positive() {
-                    write!(f, " {:.04?}", element)?;
+                if element > T::default() {
+                    write!(f, " {:.04}", element)?;
                 } else {
-                    write!(f, "{:.04?}", element)?;
+                    write!(f, "{:.04}", element)?;
                 }
                 if iter.size_hint().0 != 0 {
                     write!(f, " ")?;
@@ -67,11 +73,11 @@ impl Display for PrettyPrintParams<'_> {
                 }
             }
             write!(f, "[")?;
-            let b_element = b.get(i_line);
-            if b_element.is_sign_positive() {
-                write!(f, " {:.04?}", b_element)?;
+            let b_element = *b.get(i_line);
+            if b_element > T::default() {
+                write!(f, " {:.04}", b_element)?;
             } else {
-                write!(f, "{:.04?}", b_element)?;
+                write!(f, "{:.04}", b_element)?;
             }
             if iter.size_hint().0 != 0 {
                 write!(f, " ")?;
