@@ -1,12 +1,19 @@
 use std::{
     error::Error,
     fs::{self, OpenOptions},
-    io::{BufWriter, Write as _},
+    io::{BufWriter, Write as _}, time::{Duration, Instant},
 };
 
 use mlp::{LayerDescription, NeuralNetwork, activation_functions::Sigmoid};
 
 use faer::prelude::*;
+
+fn time(f: impl FnOnce()) -> Duration {
+    let before = Instant::now();
+    f();
+    let after = Instant::now();
+    after.duration_since(before)
+}
 
 fn train(training_data: &[(&[f32], &[f32])], nn: &mut NeuralNetwork, log: bool, record: bool) {
     let mut gym = nn.go_to_gym();
@@ -17,7 +24,11 @@ fn train(training_data: &[(&[f32], &[f32])], nn: &mut NeuralNetwork, log: bool, 
     let mut loss_records: Vec<(usize, f32)> =
         Vec::with_capacity(if record { n_records } else { 0 });
     for i_epoch in 0usize..n_epochs {
-        let loss = gym.train(eta, training_data);
+        let loss = if i_epoch == 0 {
+            gym.train(eta, training_data)
+        } else {
+            unsafe { gym.train_unchecked(eta, training_data) }
+        };
         if record
             && (i_epoch % (n_epochs / n_epochs.min(n_records)) == 0 || i_epoch == n_epochs - 1)
         {
@@ -72,7 +83,9 @@ fn main() {
     let mut nn = NeuralNetwork::new(
         2,
         [
-            LayerDescription::new(2, Sigmoid),
+            LayerDescription::new(12, Sigmoid),
+            LayerDescription::new(24, Sigmoid),
+            LayerDescription::new(24, Sigmoid),
             LayerDescription::new(1, Sigmoid),
         ],
     );
@@ -87,12 +100,13 @@ fn main() {
         }
     }
 
-    train(training_data, &mut nn, true, false);
+    let training_duration = time(|| train(training_data, &mut nn, true, false));
+    println!("training took {training_duration:?}");
 
     dump_params(&nn).unwrap();
 
     // for i_layer in 1..=nn.n_layers() {
-    //     let layer = nn.get_layer_mut(i_layer).unwrap();
+    //     let layer = nn.layer_mut(i_layer).unwrap();
     //     println!(
     //         "=== Layer #{i_layer} ===\n\n{}\n",
     //         layer.pretty_print_params(i_layer)
