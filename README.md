@@ -1,6 +1,7 @@
-# MLP - Multi-Layered Perceptron
+# MLP - Multi-Layer Perceptron
 
-A neural network library.
+A neural network library for working with classic feed-forward neural networks (a.k.a. Multi-layer
+perceptron).
 
 ## Getting started
 
@@ -15,3 +16,4 @@ $ cargo run --release --example minimal
 ## LICENSE
 
 **This project is licensed under Apache License 2.0.**
+ 
