@@ -1,4 +1,4 @@
-use std::slice::GetDisjointMutError;
+use std::{iter, slice::GetDisjointMutError};
 
 use faer::prelude::*;
 use rand::distr::uniform::SampleRange;
@@ -90,6 +90,18 @@ impl NeuralNetwork {
         self.results.layer(self.results.n_layers() - 1).unwrap().a
     }
 
+    pub fn loss(&mut self, samples: &[(&[f32], &[f32])]) -> f32 {
+        samples
+            .iter()
+            .map(|&(x, y)| -> f32 {
+                let a = self.forward(ColRef::from_slice(x));
+                iter::zip(a.iter(), y.iter())
+                    .map(|(&ak, &yk)| (ak - yk).powi(2))
+                    .sum()
+            })
+            .sum()
+    }
+
     pub fn topology(&self) -> &Topology {
         &self.topology
     }
@@ -118,9 +130,7 @@ impl NeuralNetwork {
 
     pub fn randomize_params(&mut self, range: impl SampleRange<f32> + Clone) {
         // Safety: param buffer topology is not changed.
-        unsafe {
-            self.params_unchecked_mut().randomize(range)
-        };
+        unsafe { self.params_unchecked_mut().randomize(range) };
     }
 
     pub fn params_layer(&self, index: usize) -> Option<param_buffer::LayerRef<'_>> {

@@ -1,4 +1,5 @@
 params.bin
+loss_graph.svg
 /target
 
 # Created by https://www.toptal.com/developers/gitignore/api/macos,windows,linux,vim,emacs,visualstudiocode,rust-analyzer
