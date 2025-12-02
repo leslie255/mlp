@@ -1,4 +1,4 @@
-//! Core parts of the algorithms without abstraction.
+//! Core parts of the algorithms with minimum-as-possible abstractions.
 
 pub mod deriv_buffer;
 pub mod param_buffer;
