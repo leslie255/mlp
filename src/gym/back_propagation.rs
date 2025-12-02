@@ -6,25 +6,29 @@ use crate::{
     DerivBuffer, ParamBuffer, ResultBuffer, assume, deriv_buffer, param_buffer, result_buffer,
 };
 
+/// Calculates and applies derivative.
+///
+/// Returns loss over the provided samples.
+///
 /// # Safety
 ///
-/// - `param_buffer`, `result_buffer` and `deriv_buffer` must be of the same typology (created by
-///   the same `n_inputs` and `layer_descriptions`)
+/// - `param_buffer`, `result_buffer` and `deriv_buffer` must be of the same typology
 /// - all inputs and outputs in `samples` must be of the correct sizes
-pub unsafe fn train(
-    eta: f32,
-    param_buffer: &mut ParamBuffer,
+pub unsafe fn calculate_derivs<'a>(
+    param_buffer: &ParamBuffer,
     result_buffer: &mut ResultBuffer,
     deriv_buffer: &mut DerivBuffer,
-    samples: &[(&[f32], &[f32])],
+    samples: impl IntoIterator<Item = &'a (&'a [f32], &'a [f32])>,
 ) -> f32 {
     unsafe { assume!(param_buffer.n_layers() == result_buffer.n_layers()) };
     unsafe { assume!(result_buffer.n_layers() == deriv_buffer.n_layers()) };
     let mut loss = 0.0f32;
     deriv_buffer.clear_params();
-    for (x_i, y_i) in samples.iter() {
+    let mut n = 0usize;
+    for (x_i, y_i) in samples {
+        n += 1;
         loss += unsafe {
-            train_sample(
+            back_propagate_sample(
                 param_buffer,
                 result_buffer,
                 deriv_buffer,
@@ -33,33 +37,36 @@ pub unsafe fn train(
             )
         };
     }
-    let n = samples.len() as f32;
-    unsafe { apply_derivs(param_buffer, deriv_buffer, eta, n) };
+    let n = n as f32;
+    for p in deriv_buffer.params_mut() {
+        *p /= n;
+    }
     loss / n
 }
 
-#[inline(always)]
-unsafe fn apply_derivs(
-    param_buffer: &mut ParamBuffer,
-    deriv_buffer: &mut DerivBuffer,
-    eta: f32,
-    n: f32,
-) {
+/// Calculates and applies derivative.
+///
+/// Returns loss over the provided samples.
+///
+/// # Safety
+///
+/// - `param_buffer`, `result_buffer` and `deriv_buffer` must be of the same typology
+/// - all inputs and outputs in `samples` must be of the correct sizes
+pub unsafe fn apply_derivs(param_buffer: &mut ParamBuffer, deriv_buffer: &DerivBuffer, eta: f32) {
     // Params buffer and deriv buffer has the same layout for the weights and biases (deriv buffer
     // has an additional da section at the end, but it does not affect the layout for its param
     // section).
     let param_buffer = param_buffer.buffer_mut();
-    let deriv_param_buffer = deriv_buffer.params_mut();
+    let deriv_param_buffer = deriv_buffer.params();
     unsafe { assume!(param_buffer.len() == deriv_param_buffer.len()) };
     for (p, dp) in iter::zip(param_buffer, deriv_param_buffer) {
-        *dp /= n;
         *p -= eta * (*dp);
     }
 }
 
 #[inline(always)]
-unsafe fn train_sample(
-    param_buffer: &mut ParamBuffer,
+unsafe fn back_propagate_sample(
+    param_buffer: &ParamBuffer,
     result_buffer: &mut ResultBuffer,
     deriv_buffer: &mut DerivBuffer,
     x: ColRef<f32>,
@@ -98,7 +105,7 @@ unsafe fn train_sample(
             }
         }
         unsafe {
-            train_layer(
+            back_propagate_layer(
                 is_output_layer,
                 a_prev,
                 nn_layer,
@@ -113,7 +120,7 @@ unsafe fn train_sample(
 }
 
 #[inline(always)]
-unsafe fn train_layer(
+unsafe fn back_propagate_layer(
     is_output_layer: bool,
     a_prev: ColRef<f32>,
     layer_params: param_buffer::LayerRef,

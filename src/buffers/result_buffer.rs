@@ -2,7 +2,7 @@ use std::{array, iter, mem::transmute, ptr::NonNull, slice::GetDisjointMutError}
 
 use faer::prelude::*;
 
-use crate::{ColPtr, LayerDescription};
+use crate::{ColPtr, Typology};
 
 #[derive(Clone, Copy)]
 #[allow(dead_code)]
@@ -57,11 +57,14 @@ pub struct ResultBuffer {
     _buffer: Box<[f32]>,
 }
 
+unsafe impl Send for ResultBuffer {}
+unsafe impl Sync for ResultBuffer {}
+
 impl ResultBuffer {
-    pub fn create(n_inputs: usize, layer_descriptions: &[LayerDescription]) -> Self {
+    pub fn create(typology: &Typology) -> Self {
         let n_floats = {
             let mut n_floats = 0usize;
-            for layer_description in layer_descriptions {
+            for layer_description in typology.layer_descriptions() {
                 let n = layer_description.n_neurons;
                 n_floats += n; // z
                 n_floats += n; // a
@@ -72,10 +75,12 @@ impl ResultBuffer {
         let buffer: Box<[f32]> = bytemuck::zeroed_slice_box(n_floats);
         let buffer_ptr = NonNull::from_ref(&buffer[0]);
         let layers: Box<[LayerRaw]> = unsafe {
-            let mut layers = Box::new_uninit_slice(layer_descriptions.len());
-            let mut n_previous = n_inputs;
+            let mut layers = Box::new_uninit_slice(typology.layer_descriptions().len());
+            let mut n_previous = typology.n_inputs();
             let mut counter = 0usize;
-            for (layer, layer_description) in iter::zip(&mut layers[..], layer_descriptions) {
+            for (layer, layer_description) in
+                iter::zip(&mut layers[..], typology.layer_descriptions())
+            {
                 let n = layer_description.n_neurons;
                 let offset_z = counter;
                 let offset_a = counter + n;
@@ -109,6 +114,7 @@ impl ResultBuffer {
     ///
     /// - `index` must be in range.
     #[inline(always)]
+    #[cfg_attr(debug_assertions, track_caller)]
     pub unsafe fn layer_unchecked(&self, index: usize) -> LayerRef<'_> {
         debug_assert!(index < self.n_layers());
         // Safety: function's safety contract.
@@ -121,6 +127,7 @@ impl ResultBuffer {
     ///
     /// - `index` must be in range.
     #[inline(always)]
+    #[cfg_attr(debug_assertions, track_caller)]
     pub unsafe fn layer_unchecked_mut(&mut self, index: usize) -> LayerMut<'_> {
         debug_assert!(index < self.n_layers());
         // Safety: function's safety contract.
@@ -131,6 +138,7 @@ impl ResultBuffer {
 
     /// Get a immutable view of a layer.
     /// Returns `None` if `index` is out of range.
+    #[track_caller]
     pub fn layer(&self, index: usize) -> Option<LayerRef<'_>> {
         if index < self.n_layers() {
             // Safety: function's safety contract.
@@ -142,6 +150,7 @@ impl ResultBuffer {
 
     /// Get a mutable view of a layer.
     /// Returns `None` if `index` is out of range.
+    #[track_caller]
     pub fn layer_mut(&mut self, index: usize) -> Option<LayerMut<'_>> {
         if index < self.n_layers() {
             // Safety: function's safety contract.
@@ -154,6 +163,7 @@ impl ResultBuffer {
     /// Get mutable views to multiple different layers.
     ///
     /// `indices` must be in ascending order.
+    #[track_caller]
     pub fn layer_disjoint_mut<const N: usize>(
         &mut self,
         indices: [usize; N],
@@ -172,13 +182,14 @@ impl ResultBuffer {
     ///   same time
     /// - every value in `indices` must be in range
     #[inline(always)]
+    #[cfg_attr(debug_assertions, track_caller)]
     pub unsafe fn layer_disjoint_unchecked_mut<const N: usize>(
         &mut self,
         indices: [usize; N],
     ) -> [LayerMut<'_>; N] {
         let layers: [LayerMut; N] = array::from_fn(|i| unsafe {
             let index = indices[i];
-            debug_assert!(index < indices.len());
+            debug_assert!(index < self.layers.len());
             // Safety: function's safety contract.
             let layer_raw = self.layers.get_unchecked_mut(index);
             // Safety: self would be &mut borrowed for the duration that layer lives outside.

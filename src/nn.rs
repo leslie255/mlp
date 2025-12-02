@@ -8,7 +8,34 @@ use crate::{
     param_buffer, result_buffer,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+pub struct Typology {
+    n_inputs: usize,
+    layer_descriptions: Vec<LayerDescription>,
+}
+
+impl Typology {
+    pub fn new(n_inputs: usize, layer_descriptions: Vec<LayerDescription>) -> Self {
+        Self {
+            n_inputs,
+            layer_descriptions: layer_descriptions.into(),
+        }
+    }
+
+    pub fn n_inputs(&self) -> usize {
+        self.n_inputs
+    }
+
+    pub fn layer_descriptions(&self) -> &[LayerDescription] {
+        &self.layer_descriptions
+    }
+
+    pub fn n_layers(&self) -> usize {
+        self.layer_descriptions().len()
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct LayerDescription {
     pub n_neurons: usize,
     pub phi: DynActivationFunction,
@@ -25,8 +52,7 @@ impl LayerDescription {
 
 /// # Safety
 ///
-/// - `param_buffer` and `result_buffer` must be of the same typology (created by the same
-///   `n_inputs` and `layer_descriptions`)
+/// - `param_buffer` and `result_buffer` must be of the same typology
 /// - `input` must have the correct number of rows
 pub unsafe fn forward_unchecked(
     input: ColRef<f32>,
@@ -79,30 +105,32 @@ pub unsafe fn forward_unchecked(
 }
 
 pub struct NeuralNetwork {
+    typology: Typology,
     params: ParamBuffer,
     results: ResultBuffer,
-    /// Prevent creation of an instance with struct literal.
-    _private: (),
 }
 
 impl NeuralNetwork {
-    pub fn new(n_inputs: usize, layer_descriptions: &[LayerDescription]) -> Self {
-        let params = ParamBuffer::create(n_inputs, layer_descriptions);
-        let results = ResultBuffer::create(n_inputs, layer_descriptions);
+    pub fn new(typology: Typology) -> Self {
+        let params = ParamBuffer::create(&typology);
+        let results = ResultBuffer::create(&typology);
         // Safety: params and results are of the same typology as they are created from the same
         // n_inputs and layer_descriptions.
-        unsafe { Self::from_raw_parts(params, results) }
+        unsafe { Self::from_raw_parts(typology, params, results) }
     }
 
     /// # Safety
     ///
-    /// - `params` and `results` must be of the same typology (created from the same `n_inputs` and
-    ///   `layer_descriptions`)
-    pub unsafe fn from_raw_parts(params: ParamBuffer, results: ResultBuffer) -> Self {
+    /// - `params` and `results` must be created from `typology`.
+    pub unsafe fn from_raw_parts(
+        typology: Typology,
+        params: ParamBuffer,
+        results: ResultBuffer,
+    ) -> Self {
         Self {
+            typology,
             params,
             results,
-            _private: (),
         }
     }
 
@@ -116,8 +144,8 @@ impl NeuralNetwork {
         self.results.layer(self.results.n_layers() - 1).unwrap().a
     }
 
-    pub fn n_layers(&self) -> usize {
-        self.params().n_layers()
+    pub fn typology(&self) -> &Typology {
+        &self.typology
     }
 
     pub fn params(&self) -> &ParamBuffer {

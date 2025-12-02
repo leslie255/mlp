@@ -2,7 +2,7 @@ use std::{array, iter, mem::transmute, ptr::NonNull, slice::GetDisjointMutError}
 
 use faer::prelude::*;
 
-use crate::{ColPtr, LayerDescription, MatPtr, PrettyPrintDerivs};
+use crate::{ColPtr, MatPtr, PrettyPrintDerivs, Typology};
 
 #[derive(Clone, Copy)]
 #[allow(dead_code)]
@@ -75,13 +75,16 @@ pub struct DerivBuffer {
     buffer: Box<[f32]>,
 }
 
+unsafe impl Send for DerivBuffer {}
+unsafe impl Sync for DerivBuffer {}
+
 impl DerivBuffer {
-    pub fn create(n_inputs: usize, layer_descriptions: &[LayerDescription]) -> Self {
+    pub fn create(typology: &Typology) -> Self {
         let (n_floats, da_start) = {
             let mut n_floats = 0usize;
             let mut da_start = 0usize;
-            let mut n_previous = n_inputs;
-            for layer_description in layer_descriptions {
+            let mut n_previous = typology.n_inputs();
+            for layer_description in typology.layer_descriptions() {
                 let n = layer_description.n_neurons;
                 let dw_size = n * n_previous;
                 let db_size = n;
@@ -99,11 +102,13 @@ impl DerivBuffer {
         let buffer: Box<[f32]> = bytemuck::zeroed_slice_box(n_floats);
         let buffer_ptr = NonNull::from_ref(&buffer[0]);
         let layers: Box<[LayerRaw]> = unsafe {
-            let mut layers = Box::new_uninit_slice(layer_descriptions.len());
-            let mut n_previous = n_inputs;
+            let mut layers = Box::new_uninit_slice(typology.layer_descriptions().len());
+            let mut n_previous = typology.n_inputs();
             let mut counter_params = 0usize;
             let mut counter_da = da_start;
-            for (layer, layer_description) in iter::zip(&mut layers[..], layer_descriptions) {
+            for (layer, layer_description) in
+                iter::zip(&mut layers[..], typology.layer_descriptions())
+            {
                 let n = layer_description.n_neurons;
                 let offset_dw = counter_params;
                 let offset_db = counter_params + n * n_previous;
@@ -146,7 +151,11 @@ impl DerivBuffer {
     }
 
     /// `&mut` reference to the params section (storage of `dw` and `db`s) of the buffer.
-    /// Useful for applying derivative value onto neural network's parameters.
+    pub(crate) fn params(&self) -> &[f32] {
+        &self.buffer[0..self.da_start]
+    }
+
+    /// `&mut` reference to the params section (storage of `dw` and `db`s) of the buffer.
     pub(crate) fn params_mut(&mut self) -> &mut [f32] {
         &mut self.buffer[0..self.da_start]
     }
@@ -155,6 +164,7 @@ impl DerivBuffer {
     ///
     /// - `index` must be in range.
     #[inline(always)]
+    #[cfg_attr(debug_assertions, track_caller)]
     pub unsafe fn layer_unchecked(&self, index: usize) -> LayerRef<'_> {
         debug_assert!(index < self.n_layers());
         // Safety: function's safety contract.
@@ -167,6 +177,7 @@ impl DerivBuffer {
     ///
     /// - `index` must be in range.
     #[inline(always)]
+    #[cfg_attr(debug_assertions, track_caller)]
     pub unsafe fn layer_unchecked_mut(&mut self, index: usize) -> LayerMut<'_> {
         debug_assert!(index < self.n_layers());
         // Safety: function's safety contract.
@@ -177,6 +188,7 @@ impl DerivBuffer {
 
     /// Get a immutable view of a layer.
     /// Returns `None` if `index` is out of range.
+    #[track_caller]
     pub fn layer(&self, index: usize) -> Option<LayerRef<'_>> {
         if index < self.n_layers() {
             // Safety: function's safety contract.
@@ -188,6 +200,7 @@ impl DerivBuffer {
 
     /// Get a mutable view of a layer.
     /// Returns `None` if `index` is out of range.
+    #[track_caller]
     pub fn layer_mut(&mut self, index: usize) -> Option<LayerMut<'_>> {
         if index < self.n_layers() {
             // Safety: function's safety contract.
@@ -200,6 +213,7 @@ impl DerivBuffer {
     /// Get mutable views to multiple different layers.
     ///
     /// `indices` must be in ascending order.
+    #[track_caller]
     pub fn layer_disjoint_mut<const N: usize>(
         &mut self,
         indices: [usize; N],
@@ -218,13 +232,14 @@ impl DerivBuffer {
     ///   same time
     /// - every value in `indices` must be in range
     #[inline(always)]
+    #[cfg_attr(debug_assertions, track_caller)]
     pub unsafe fn layer_disjoint_unchecked_mut<const N: usize>(
         &mut self,
         indices: [usize; N],
     ) -> [LayerMut<'_>; N] {
         let layers: [LayerMut; N] = array::from_fn(|i| unsafe {
             let index = indices[i];
-            debug_assert!(index < indices.len());
+            debug_assert!(index < self.layers.len());
             // Safety: function's safety contract.
             let layer_raw = self.layers.get_unchecked_mut(index);
             // Safety: self would be &mut borrowed for the duration that layer lives outside.
