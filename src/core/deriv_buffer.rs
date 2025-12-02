@@ -2,7 +2,7 @@ use std::{array, iter, mem::transmute, ptr::NonNull, slice::GetDisjointMutError}
 
 use faer::prelude::*;
 
-use crate::{ColPtr, MatPtr, PrettyPrintDerivs, Typology};
+use crate::{ColPtr, MatPtr, PrettyPrintDerivs, Topology};
 
 #[derive(Clone, Copy)]
 #[allow(dead_code)]
@@ -79,12 +79,12 @@ unsafe impl Send for DerivBuffer {}
 unsafe impl Sync for DerivBuffer {}
 
 impl DerivBuffer {
-    pub fn create(typology: &Typology) -> Self {
+    pub fn create(topology: &Topology) -> Self {
         let (n_floats, da_start) = {
             let mut n_floats = 0usize;
             let mut da_start = 0usize;
-            let mut n_previous = typology.n_inputs();
-            for layer_description in typology.layer_descriptions() {
+            let mut n_previous = topology.n_inputs();
+            for layer_description in topology.layer_descriptions() {
                 let n = layer_description.n_neurons;
                 let dw_size = n * n_previous;
                 let db_size = n;
@@ -102,12 +102,12 @@ impl DerivBuffer {
         let buffer: Box<[f32]> = bytemuck::zeroed_slice_box(n_floats);
         let buffer_ptr = NonNull::from_ref(&buffer[0]);
         let layers: Box<[LayerRaw]> = unsafe {
-            let mut layers = Box::new_uninit_slice(typology.layer_descriptions().len());
-            let mut n_previous = typology.n_inputs();
+            let mut layers = Box::new_uninit_slice(topology.layer_descriptions().len());
+            let mut n_previous = topology.n_inputs();
             let mut counter_params = 0usize;
             let mut counter_da = da_start;
             for (layer, layer_description) in
-                iter::zip(&mut layers[..], typology.layer_descriptions())
+                iter::zip(&mut layers[..], topology.layer_descriptions())
             {
                 let n = layer_description.n_neurons;
                 let offset_dw = counter_params;

@@ -1,6 +1,7 @@
 use std::slice::GetDisjointMutError;
 
 use faer::prelude::*;
+use rand::distr::uniform::SampleRange;
 
 use crate::{
     ActivationFunction, DynActivationFunction,
@@ -8,12 +9,12 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
-pub struct Typology {
+pub struct Topology {
     n_inputs: usize,
     layer_descriptions: Vec<LayerDescription>,
 }
 
-impl Typology {
+impl Topology {
     pub fn new(n_inputs: usize, layer_descriptions: Vec<LayerDescription>) -> Self {
         Self {
             n_inputs,
@@ -50,30 +51,30 @@ impl LayerDescription {
 }
 
 pub struct NeuralNetwork {
-    typology: Typology,
+    topology: Topology,
     params: ParamBuffer,
     results: ResultBuffer,
 }
 
 impl NeuralNetwork {
-    pub fn new(typology: Typology) -> Self {
-        let params = ParamBuffer::create(&typology);
-        let results = ResultBuffer::create(&typology);
-        // Safety: params and results are of the same typology as they are created from the same
+    pub fn new(topology: Topology) -> Self {
+        let params = ParamBuffer::create(&topology);
+        let results = ResultBuffer::create(&topology);
+        // Safety: params and results are of the same topology as they are created from the same
         // n_inputs and layer_descriptions.
-        unsafe { Self::from_raw_parts(typology, params, results) }
+        unsafe { Self::from_raw_parts(topology, params, results) }
     }
 
     /// # Safety
     ///
-    /// - `params` and `results` must be created from `typology`.
+    /// - `params` and `results` must be created from `topology`.
     pub unsafe fn from_raw_parts(
-        typology: Typology,
+        topology: Topology,
         params: ParamBuffer,
         results: ResultBuffer,
     ) -> Self {
         Self {
-            typology,
+            topology,
             params,
             results,
         }
@@ -84,17 +85,42 @@ impl NeuralNetwork {
     }
 
     pub fn forward(&mut self, input: ColRef<f32>) -> ColRef<'_, f32> {
-        // Safety: params and results are created from the same typology.
+        // Safety: params and results are created from the same topology.
         unsafe { forward_unchecked(input, &self.params, &mut self.results) };
         self.results.layer(self.results.n_layers() - 1).unwrap().a
     }
 
-    pub fn typology(&self) -> &Typology {
-        &self.typology
+    pub fn topology(&self) -> &Topology {
+        &self.topology
     }
 
     pub fn params(&self) -> &ParamBuffer {
         &self.params
+    }
+
+    /// # Safety
+    ///
+    /// Topology of `params` must not be changed.
+    pub unsafe fn params_unchecked_mut(&mut self) -> &mut ParamBuffer {
+        &mut self.params
+    }
+
+    pub fn params_as_slice(&self) -> &[f32] {
+        self.params().as_slice()
+    }
+
+    pub fn params_as_mut_slice(&mut self) -> &mut [f32] {
+        // Safety: topology cannot be changed by user when it only has access to params as a mut
+        // slice.
+        let params = unsafe { self.params_unchecked_mut() };
+        params.as_mut_slice()
+    }
+
+    pub fn randomize_params(&mut self, range: impl SampleRange<f32> + Clone) {
+        // Safety: param buffer topology is not changed.
+        unsafe {
+            self.params_unchecked_mut().randomize(range)
+        };
     }
 
     pub fn params_layer(&self, index: usize) -> Option<param_buffer::LayerRef<'_>> {
@@ -102,23 +128,16 @@ impl NeuralNetwork {
     }
 
     pub fn params_layer_mut(&mut self, index: usize) -> Option<param_buffer::LayerMut<'_>> {
-        // Safety: typology cannot be changed by user when it only has access to a layer.
-        unsafe { self.params_mut().layer_mut(index) }
+        // Safety: topology cannot be changed by user when it only has access to a layer.
+        unsafe { self.params_unchecked_mut().layer_mut(index) }
     }
 
     pub fn params_layer_disjoint_mut<const N: usize>(
         &mut self,
         indices: [usize; N],
     ) -> Result<[param_buffer::LayerMut<'_>; N], GetDisjointMutError> {
-        // Safety: typology cannot be changed by user when it only has access to praticular layers.
-        unsafe { self.params_mut().layer_disjoint_mut(indices) }
-    }
-
-    /// # Safety
-    ///
-    /// Typology of `params` must not be changed.
-    pub unsafe fn params_mut(&mut self) -> &mut ParamBuffer {
-        &mut self.params
+        // Safety: topology cannot be changed by user when it only has access to praticular layers.
+        unsafe { self.params_unchecked_mut().layer_disjoint_mut(indices) }
     }
 
     pub fn results(&self) -> &ResultBuffer {
@@ -127,8 +146,8 @@ impl NeuralNetwork {
 
     /// # Safety
     ///
-    /// Typology of `results` must not be changed.
-    pub unsafe fn results_mut(&mut self) -> &mut ResultBuffer {
+    /// Topology of `results` must not be changed.
+    pub unsafe fn results_unchecked_mut(&mut self) -> &mut ResultBuffer {
         &mut self.results
     }
 
@@ -137,15 +156,15 @@ impl NeuralNetwork {
     }
 
     pub fn results_layer_mut(&mut self, index: usize) -> Option<result_buffer::LayerMut<'_>> {
-        // Safety: typology cannot be changed by user when it only has access to a layer.
-        unsafe { self.results_mut().layer_mut(index) }
+        // Safety: topology cannot be changed by user when it only has access to a layer.
+        unsafe { self.results_unchecked_mut().layer_mut(index) }
     }
 
     pub fn results_layer_disjoint_mut<const N: usize>(
         &mut self,
         indices: [usize; N],
     ) -> Result<[result_buffer::LayerMut<'_>; N], GetDisjointMutError> {
-        // Safety: typology cannot be changed by user when it only has access to praticular layers.
-        unsafe { self.results_mut().layer_disjoint_mut(indices) }
+        // Safety: topology cannot be changed by user when it only has access to praticular layers.
+        unsafe { self.results_unchecked_mut().layer_disjoint_mut(indices) }
     }
 }

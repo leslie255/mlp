@@ -6,7 +6,7 @@ use std::{
 };
 
 use gnuplot::{AxesCommon, ColorType, Figure, PlotOption};
-use mlp::{activation_functions::*, core::ParamBuffer, Gym, LayerDescription, NeuralNetwork, Typology};
+use mlp::{Gym, LayerDescription, NeuralNetwork, Topology, activation_functions::*};
 
 use faer::prelude::*;
 
@@ -83,22 +83,22 @@ fn train(samples: &[(&[f32], &[f32])], nn: &mut NeuralNetwork, single_thread: bo
     }
 }
 
-fn load_params(param_buffer: &mut ParamBuffer) -> Result<(), Box<dyn Error>> {
+fn load_params(nn: &mut NeuralNetwork) -> Result<(), Box<dyn Error>> {
     let bytes = fs::read("./params.bin")?;
     let buffer: &[f32] = bytemuck::cast_slice(&bytes);
-    let count = param_buffer.buffer_mut().len();
+    let count = nn.params_as_mut_slice().len();
     unsafe {
         copy_nonoverlapping(
             buffer.as_ptr(),
-            param_buffer.buffer_mut().as_mut_ptr(),
+            nn.params_as_mut_slice().as_mut_ptr(),
             count,
         );
     }
     Ok(())
 }
 
-fn dump_params(param_buffer: &ParamBuffer) -> Result<(), ()> {
-    let buffer = param_buffer.buffer();
+fn dump_params(nn: &NeuralNetwork) -> Result<(), ()> {
+    let buffer = nn.params_as_slice();
     let bytes: &[u8] = bytemuck::cast_slice(buffer);
     fs::write("./params.bin", bytes).map_err(|_| ())
 }
@@ -111,7 +111,7 @@ fn main() {
         (&[1., 1.], &[0.]),
     ];
 
-    let typology = Typology::new(
+    let typology = Topology::new(
         2, // n_inputs
         [
             LayerDescription::new(128, Sigmoid),
@@ -124,13 +124,13 @@ fn main() {
     let mut nn = NeuralNetwork::new(typology);
 
     // TODO: eliminate these unsafe with safe abstractions.
-    match load_params(unsafe { nn.params_mut() }) {
+    match load_params(&mut nn) {
         Ok(_) => {
             println!("Loaded parameters from `params.bin`");
         }
         Err(_) => {
             println!("Training from scratch");
-            unsafe { nn.params_mut().randomize(-0.1..0.1) };
+            nn.randomize_params(-0.1..0.1);
         }
     }
 
@@ -139,7 +139,7 @@ fn main() {
     let (training_duration, records) = time(|| train(samples, &mut nn, true));
     println!("training took {training_duration:?}");
 
-    dump_params(nn.params()).unwrap();
+    dump_params(&nn).unwrap();
 
     plot_loss(&records, "loss_graph.svg");
 

@@ -2,7 +2,7 @@ use std::{array, iter, mem::transmute, ptr::NonNull, slice::GetDisjointMutError}
 
 use faer::prelude::*;
 
-use crate::{ColPtr, Typology};
+use crate::{ColPtr, Topology};
 
 #[derive(Clone, Copy)]
 #[allow(dead_code)]
@@ -61,10 +61,10 @@ unsafe impl Send for ResultBuffer {}
 unsafe impl Sync for ResultBuffer {}
 
 impl ResultBuffer {
-    pub fn create(typology: &Typology) -> Self {
+    pub fn create(topology: &Topology) -> Self {
         let n_floats = {
             let mut n_floats = 0usize;
-            for layer_description in typology.layer_descriptions() {
+            for layer_description in topology.layer_descriptions() {
                 let n = layer_description.n_neurons;
                 n_floats += n; // z
                 n_floats += n; // a
@@ -75,11 +75,11 @@ impl ResultBuffer {
         let buffer: Box<[f32]> = bytemuck::zeroed_slice_box(n_floats);
         let buffer_ptr = NonNull::from_ref(&buffer[0]);
         let layers: Box<[LayerRaw]> = unsafe {
-            let mut layers = Box::new_uninit_slice(typology.layer_descriptions().len());
-            let mut n_previous = typology.n_inputs();
+            let mut layers = Box::new_uninit_slice(topology.layer_descriptions().len());
+            let mut n_previous = topology.n_inputs();
             let mut counter = 0usize;
             for (layer, layer_description) in
-                iter::zip(&mut layers[..], typology.layer_descriptions())
+                iter::zip(&mut layers[..], topology.layer_descriptions())
             {
                 let n = layer_description.n_neurons;
                 let offset_z = counter;

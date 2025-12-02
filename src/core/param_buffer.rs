@@ -3,7 +3,7 @@ use std::{array, iter, mem::transmute, ptr::NonNull, slice::GetDisjointMutError}
 use faer::prelude::*;
 use rand::{Rng, distr::uniform::SampleRange, rngs::ThreadRng};
 
-use crate::{ColPtr, DynActivationFunction, MatPtr, PrettyPrintParams, Typology};
+use crate::{ColPtr, DynActivationFunction, MatPtr, PrettyPrintParams, Topology};
 
 #[derive(Clone, Copy)]
 #[allow(dead_code)]
@@ -65,11 +65,11 @@ unsafe impl Send for ParamBuffer {}
 unsafe impl Sync for ParamBuffer {}
 
 impl ParamBuffer {
-    pub fn create(typology: &Typology) -> Self {
+    pub fn create(topology: &Topology) -> Self {
         let n_floats = {
             let mut n_floats = 0usize;
-            let mut n_previous = typology.n_inputs();
-            for layer_description in typology.layer_descriptions() {
+            let mut n_previous = topology.n_inputs();
+            for layer_description in topology.layer_descriptions() {
                 let n = layer_description.n_neurons;
                 n_floats += n * n_previous; // w
                 n_floats += n; // b
@@ -81,11 +81,11 @@ impl ParamBuffer {
         let buffer: Box<[f32]> = bytemuck::zeroed_slice_box(n_floats);
         let buffer_ptr = NonNull::from_ref(&buffer[0]);
         let layers: Box<[LayerRaw]> = unsafe {
-            let mut layers = Box::new_uninit_slice(typology.layer_descriptions().len());
-            let mut n_previous = typology.n_inputs();
+            let mut layers = Box::new_uninit_slice(topology.layer_descriptions().len());
+            let mut n_previous = topology.n_inputs();
             let mut counter = 0usize;
             for (layer, layer_description) in
-                iter::zip(&mut layers[..], typology.layer_descriptions())
+                iter::zip(&mut layers[..], topology.layer_descriptions())
             {
                 let n = layer_description.n_neurons;
                 let offset_w = counter;
@@ -109,7 +109,7 @@ impl ParamBuffer {
 
     pub fn randomize(&mut self, range: impl SampleRange<f32> + Clone) {
         let mut rng = ThreadRng::default();
-        for p in self.buffer_mut() {
+        for p in self.as_mut_slice() {
             *p = rng.random_range(range.clone());
         }
     }
@@ -120,14 +120,14 @@ impl ParamBuffer {
     }
 
     /// Direct access to the underlying buffer.
-    /// Useful for dumping/loading NN params from file.
-    pub fn buffer(&self) -> &[f32] {
+    /// Useful for dumping/loading params from file.
+    pub fn as_slice(&self) -> &[f32] {
         &self.buffer
     }
 
     /// Direct access to the underlying buffer.
-    /// Useful for dumping/loading NN params from file.
-    pub fn buffer_mut(&mut self) -> &mut [f32] {
+    /// Useful for dumping/loading params from file.
+    pub fn as_mut_slice(&mut self) -> &mut [f32] {
         &mut self.buffer
     }
 

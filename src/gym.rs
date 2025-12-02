@@ -1,7 +1,7 @@
 use std::{marker::PhantomData, ptr::NonNull, sync::mpsc};
 
 use crate::{
-    NeuralNetwork, Typology,
+    NeuralNetwork, Topology,
     core::{DerivBuffer, ParamBuffer, ResultBuffer, apply_derivs, calculate_derivs},
 };
 
@@ -11,7 +11,7 @@ use crate::{
 ///
 /// # Safety
 ///
-/// - `param_buffer`, `result_buffer` and `deriv_buffer` must be of the same typology
+/// - `param_buffer`, `result_buffer` and `deriv_buffer` must be of the same topology
 /// - all inputs and outputs in `samples` must be of the correct sizes
 pub unsafe fn train_single_threaded<'a>(
     eta: f32,
@@ -26,7 +26,7 @@ pub unsafe fn train_single_threaded<'a>(
 }
 
 pub struct Gym<'a> {
-    typology: Typology,
+    topology: Topology,
     params: NonNull<ParamBuffer>,
     results: Option<ResultBuffer>,
     derivs: Option<DerivBuffer>,
@@ -41,8 +41,8 @@ struct WorkerResult {
 impl<'a> Gym<'a> {
     pub fn new(nn: &'a mut NeuralNetwork) -> Self {
         Self {
-            typology: nn.typology().clone(),
-            params: unsafe { NonNull::from_mut(nn.params_mut()) },
+            topology: nn.topology().clone(),
+            params: unsafe { NonNull::from_mut(nn.params_unchecked_mut()) },
             results: None,
             derivs: None,
             _marker: PhantomData,
@@ -54,9 +54,9 @@ impl<'a> Gym<'a> {
         unsafe {
             let params = &mut *self.params.as_ptr();
             self.results
-                .get_or_insert_with(|| ResultBuffer::create(&self.typology));
+                .get_or_insert_with(|| ResultBuffer::create(&self.topology));
             self.derivs
-                .get_or_insert_with(|| DerivBuffer::create(&self.typology));
+                .get_or_insert_with(|| DerivBuffer::create(&self.topology));
             train_single_threaded(
                 eta,
                 params,
@@ -83,9 +83,9 @@ impl<'a> Gym<'a> {
                     false => &samples[i * chunk_size..(i + 1) * chunk_size],
                 };
                 let params = unsafe { &*self.params.as_ptr() };
-                let typology = &self.typology;
+                let topology = &self.topology;
                 s.spawn(move || {
-                    let result = worker(params, typology, samples_chunk);
+                    let result = worker(params, topology, samples_chunk);
                     tx.send(result).unwrap();
                 });
             }
@@ -101,9 +101,9 @@ impl<'a> Gym<'a> {
     }
 }
 
-fn worker(params: &ParamBuffer, typology: &Typology, samples: &[(&[f32], &[f32])]) -> WorkerResult {
-    let mut results = ResultBuffer::create(typology);
-    let mut derivs = DerivBuffer::create(typology);
+fn worker(params: &ParamBuffer, topology: &Topology, samples: &[(&[f32], &[f32])]) -> WorkerResult {
+    let mut results = ResultBuffer::create(topology);
+    let mut derivs = DerivBuffer::create(topology);
     let loss = unsafe { calculate_derivs(params, &mut results, &mut derivs, samples) };
     WorkerResult { loss, derivs }
 }

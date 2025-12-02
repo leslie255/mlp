@@ -13,7 +13,7 @@ use crate::{
 ///
 /// # Safety
 ///
-/// - `param_buffer`, `result_buffer` and `deriv_buffer` must be of the same typology
+/// - `param_buffer`, `result_buffer` and `deriv_buffer` must be of the same topology
 /// - all inputs and outputs in `samples` must be of the correct sizes
 pub unsafe fn calculate_derivs<'a>(
     param_buffer: &ParamBuffer,
@@ -51,13 +51,13 @@ pub unsafe fn calculate_derivs<'a>(
 ///
 /// # Safety
 ///
-/// - `param_buffer`, `result_buffer` and `deriv_buffer` must be of the same typology
+/// - `param_buffer`, `result_buffer` and `deriv_buffer` must be of the same topology
 /// - all inputs and outputs in `samples` must be of the correct sizes
 pub unsafe fn apply_derivs(param_buffer: &mut ParamBuffer, deriv_buffer: &DerivBuffer, eta: f32) {
     // Params buffer and deriv buffer has the same layout for the weights and biases (deriv buffer
     // has an additional da section at the end, but it does not affect the layout for its param
     // section).
-    let param_buffer = param_buffer.buffer_mut();
+    let param_buffer = param_buffer.as_mut_slice();
     let deriv_param_buffer = deriv_buffer.params();
     unsafe { assume!(param_buffer.len() == deriv_param_buffer.len()) };
     for (p, dp) in iter::zip(param_buffer, deriv_param_buffer) {

@@ -4,7 +4,7 @@ use crate::{assume, core::{result_buffer, ParamBuffer, ResultBuffer}};
 
 /// # Safety
 ///
-/// - `param_buffer` and `result_buffer` must be of the same typology
+/// - `param_buffer` and `result_buffer` must be of the same topology
 /// - `input` must have the correct number of rows
 pub unsafe fn forward_unchecked(
     input: ColRef<f32>,
