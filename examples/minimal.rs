@@ -27,7 +27,7 @@ fn main() {
 
     for _ in 0..1_000_000 {
         // For this example, `train_singe_threaded` is actually faster since the number of samples is
-        // quite low. This is simply to show that multi-threaded training is possible.
+        // quite low. Use `train` instead of `train_single_threaded` for multi-threaded training.
         gym.train_single_threaded(
             // num_cpus::get(),  // n_threads
             0.25,             // eta
