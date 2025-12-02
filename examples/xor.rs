@@ -56,7 +56,11 @@ fn train(samples: &[(&[f32], &[f32])], nn: &mut NeuralNetwork, single_thread: bo
     let n_logs = 20;
     let n_records = 1000;
 
-    println!("Using {n_threads} threads");
+    if !single_thread {
+        println!("Using {n_threads} threads");
+    } else {
+        println!("Single threaded");
+    }
 
     let mut i_epochs_records: Vec<f32> = Vec::with_capacity(n_records);
     let mut loss_records: Vec<f32> = Vec::with_capacity(n_records);
@@ -64,7 +68,10 @@ fn train(samples: &[(&[f32], &[f32])], nn: &mut NeuralNetwork, single_thread: bo
     let mut gym = Gym::new(nn);
 
     for i_epoch in 0usize..n_epochs {
-        let loss = gym.train(n_threads, eta, samples);
+        let loss = match single_thread {
+            true => gym.train_single_threaded(eta, samples),
+            false => gym.train(n_threads, eta, samples),
+        };
         // Log.
         if i_epoch % (n_epochs / n_epochs.min(n_logs)) == 0 || i_epoch == n_epochs - 1 {
             let percentage = (i_epoch as f32) / (n_epochs as f32) * 100.0;
@@ -111,17 +118,16 @@ fn main() {
         (&[1., 1.], &[0.]),
     ];
 
-    let typology = Topology::new(
+    let topology = Topology::new(
         2, // n_inputs
         [
-            LayerDescription::new(128, Sigmoid),
-            LayerDescription::new(128, Sigmoid),
+            LayerDescription::new(2, Sigmoid),
             LayerDescription::new(1, Sigmoid),
         ]
         .into(),
     );
 
-    let mut nn = NeuralNetwork::new(typology);
+    let mut nn = NeuralNetwork::new(topology);
 
     // TODO: eliminate these unsafe with safe abstractions.
     match load_params(&mut nn) {
@@ -144,7 +150,7 @@ fn main() {
     plot_loss(&records, "loss_graph.svg");
 
     // Print parameters.
-    // for i_layer in 0..nn.typology().n_layers() {
+    // for i_layer in 0..nn.topology().n_layers() {
     //     println!(
     //         "=== Layer #{i_layer} ===\n\n{}\n",
     //         nn.params().pretty_print_layer(i_layer).unwrap(),

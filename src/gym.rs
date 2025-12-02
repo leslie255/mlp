@@ -45,6 +45,8 @@ impl<'a> Gym<'a> {
     }
 
     /// Returns the loss.
+    ///
+    /// Calls `train_single_threaded` if `n_threads == 0`.
     pub fn train(&mut self, n_threads: usize, eta: f32, samples: &[(&[f32], &[f32])]) -> f32 {
         if n_threads == 0 {
             return self.train_single_threaded(eta, samples);
