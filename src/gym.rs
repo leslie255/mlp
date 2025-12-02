@@ -5,26 +5,6 @@ use crate::{
     core::{DerivBuffer, ParamBuffer, ResultBuffer, apply_derivs, calculate_derivs},
 };
 
-/// Calculates and applies derivative.
-///
-/// Returns loss over the provided samples.
-///
-/// # Safety
-///
-/// - `param_buffer`, `result_buffer` and `deriv_buffer` must be of the same topology
-/// - all inputs and outputs in `samples` must be of the correct sizes
-pub unsafe fn train_single_threaded<'a>(
-    eta: f32,
-    param_buffer: &mut ParamBuffer,
-    result_buffer: &mut ResultBuffer,
-    deriv_buffer: &mut DerivBuffer,
-    samples: impl IntoIterator<Item = &'a (&'a [f32], &'a [f32])>,
-) -> f32 {
-    let loss = unsafe { calculate_derivs(param_buffer, result_buffer, deriv_buffer, samples) };
-    unsafe { apply_derivs(param_buffer, deriv_buffer, eta) };
-    loss
-}
-
 pub struct Gym<'a> {
     topology: Topology,
     params: NonNull<ParamBuffer>,
@@ -49,24 +29,22 @@ impl<'a> Gym<'a> {
         }
     }
 
+    /// Returns the loss.
     pub fn train_single_threaded(&mut self, eta: f32, samples: &[(&[f32], &[f32])]) -> f32 {
         assert!(!samples.is_empty());
-        unsafe {
-            let params = &mut *self.params.as_ptr();
-            self.results
-                .get_or_insert_with(|| ResultBuffer::create(&self.topology));
-            self.derivs
-                .get_or_insert_with(|| DerivBuffer::create(&self.topology));
-            train_single_threaded(
-                eta,
-                params,
-                self.results.as_mut().unwrap(),
-                self.derivs.as_mut().unwrap(),
-                samples,
-            )
-        }
+        let params = unsafe { &mut *self.params.as_ptr() };
+        self.results
+            .get_or_insert_with(|| ResultBuffer::create(&self.topology));
+        self.derivs
+            .get_or_insert_with(|| DerivBuffer::create(&self.topology));
+        let results = self.results.as_mut().unwrap();
+        let derivs = self.derivs.as_mut().unwrap();
+        let loss = unsafe { calculate_derivs(params, results, derivs, samples) };
+        unsafe { apply_derivs(params, derivs, eta) };
+        loss
     }
 
+    /// Returns the loss.
     pub fn train(&mut self, n_threads: usize, eta: f32, samples: &[(&[f32], &[f32])]) -> f32 {
         if n_threads == 0 {
             return self.train_single_threaded(eta, samples);
