@@ -1,17 +1,59 @@
-use std::any::type_name_of_val;
+use std::fmt::{self, Debug};
 
-pub trait ActivationFunction: Send + Sync + 'static {
-    fn name(&self) -> &'static str {
-        type_name_of_val(self)
+#[derive(Clone, Copy)]
+pub struct DynActivationFunction {
+    name: &'static str,
+    apply: fn(f32) -> f32,
+    apply_multiple: unsafe fn(&[f32], &mut [f32]),
+    deriv: fn(f32) -> f32,
+}
+
+impl Debug for DynActivationFunction {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        Debug::fmt(self.name, f)
+    }
+}
+
+impl DynActivationFunction {
+    pub fn new<Phi: ActivationFunction>(_: Phi) -> Self {
+        Self {
+            name: Phi::NAME,
+            apply: Phi::apply,
+            apply_multiple: Phi::apply_multiple,
+            deriv: Phi::deriv,
+        }
     }
 
-    fn apply(&self, x: f32) -> f32;
+    pub fn name(&self) -> &'static str {
+        self.name
+    }
 
-    fn deriv(&self, x: f32) -> f32;
+    pub fn apply(&self, x: f32) -> f32 {
+        (self.apply)(x)
+    }
 
-    fn apply_vector(&self, x: &[f32], y: &mut [f32]) {
+    /// # Safety
+    ///
+    /// `xs` and `ys` must be of the same length.
+    pub unsafe fn apply_multiple(&self, xs: &[f32], ys: &mut [f32]) {
+        unsafe { (self.apply_multiple)(xs, ys) }
+    }
+
+    pub fn deriv(&self, x: f32) -> f32 {
+        (self.deriv)(x)
+    }
+}
+
+pub trait ActivationFunction: Send + Sync + 'static {
+    const NAME: &'static str;
+
+    fn apply(x: f32) -> f32;
+
+    fn deriv(x: f32) -> f32;
+
+    fn apply_multiple(x: &[f32], y: &mut [f32]) {
         for i in 0..x.len() {
-            y[i] = self.apply(x[i]);
+            y[i] = Self::apply(x[i]);
         }
     }
 }
@@ -24,19 +66,17 @@ pub mod activation_functions {
     #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
     pub struct Identity;
     impl ActivationFunction for Identity {
-        fn name(&self) -> &'static str {
-            "identity"
-        }
+        const NAME: &'static str = "identity";
 
-        fn apply(&self, x: f32) -> f32 {
+        fn apply(x: f32) -> f32 {
             x
         }
 
-        fn deriv(&self, _: f32) -> f32 {
+        fn deriv(_: f32) -> f32 {
             1.0
         }
 
-        fn apply_vector(&self, x: &[f32], y: &mut [f32]) {
+        fn apply_multiple(x: &[f32], y: &mut [f32]) {
             let len = x.len().min(y.len());
             unsafe {
                 copy_nonoverlapping(x.as_ptr(), y.as_mut_ptr(), len);
@@ -44,38 +84,34 @@ pub mod activation_functions {
         }
     }
 
-    fn sigma(x: f32) -> f32 {
+    fn sigmoid(x: f32) -> f32 {
         1.0 / (1.0 + f32::exp(-x))
     }
 
     #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
     pub struct Sigmoid;
     impl ActivationFunction for Sigmoid {
-        fn name(&self) -> &'static str {
-            "sigmoid"
+        const NAME: &'static str = "sigmoid";
+
+        fn apply(x: f32) -> f32 {
+            sigmoid(x)
         }
 
-        fn apply(&self, x: f32) -> f32 {
-            sigma(x)
-        }
-
-        fn deriv(&self, x: f32) -> f32 {
-            sigma(x) * (1.0 - sigma(x))
+        fn deriv(x: f32) -> f32 {
+            sigmoid(x) * (1.0 - sigmoid(x))
         }
     }
 
     #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
     pub struct Tanh;
     impl ActivationFunction for Tanh {
-        fn name(&self) -> &'static str {
-            "tanh"
-        }
+        const NAME: &'static str = "tanh";
 
-        fn apply(&self, x: f32) -> f32 {
+        fn apply(x: f32) -> f32 {
             f32::tanh(x)
         }
 
-        fn deriv(&self, x: f32) -> f32 {
+        fn deriv(x: f32) -> f32 {
             1.0 - f32::tanh(x).powi(2)
         }
     }

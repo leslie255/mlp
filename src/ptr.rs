@@ -1,4 +1,4 @@
-use std::ptr::NonNull;
+use std::{mem::transmute, ptr::NonNull};
 
 use faer::prelude::*;
 
@@ -6,6 +6,7 @@ use faer::prelude::*;
 pub struct ColPtr<T> {
     pub ptr: NonNull<T>,
     pub nrows: usize,
+    pub row_stride: usize,
 }
 
 impl<T> Eq for ColPtr<T> {}
@@ -27,16 +28,25 @@ impl<T> Copy for ColPtr<T> {}
 impl<T> ColPtr<T> {
     /// # Safety
     ///
-    /// - must meet safety requirements for performing `data.add(offset)`
-    pub const unsafe fn with_offset(data: NonNull<T>, offset: usize, nrows: usize) -> Self {
-        Self {
-            ptr: unsafe { data.add(offset) },
-            nrows,
-        }
+    /// - must meet safety requirements for performing `buffer.add(offset)`
+    pub const unsafe fn with_offset(buffer: NonNull<T>, offset: usize, nrows: usize) -> Self {
+        Self::new(unsafe { buffer.add(offset) }, nrows)
     }
 
     pub const fn new(ptr: NonNull<T>, nrows: usize) -> Self {
-        Self { ptr, nrows }
+        Self {
+            ptr,
+            nrows,
+            row_stride: 1,
+        }
+    }
+
+    pub const fn from_col_ref(col_ref: ColRef<f32>) -> Self {
+        unsafe { transmute(col_ref) }
+    }
+
+    pub const fn from_col_mut(col_mut: ColMut<f32>) -> Self {
+        unsafe { transmute(col_mut) }
     }
 
     /// # Safety
@@ -45,7 +55,7 @@ impl<T> ColPtr<T> {
     /// - this slice of `f32` must satisfy aliasing requirements for being cast into a `&'a`
     ///   reference
     pub const unsafe fn as_col_ref<'a>(self) -> ColRef<'a, T> {
-        unsafe { ColRef::from_raw_parts(self.ptr.as_ptr(), self.nrows, 1) }
+        unsafe { transmute(self) }
     }
 
     /// # Safety
@@ -54,7 +64,7 @@ impl<T> ColPtr<T> {
     /// - this slice of `f32` must satisfy aliasing requirements for being cast into a `&'a mut`
     ///   reference
     pub const unsafe fn as_col_mut<'a>(self) -> ColMut<'a, T> {
-        unsafe { ColMut::from_raw_parts_mut(self.ptr.as_ptr(), self.nrows, 1) }
+        unsafe { transmute(self) }
     }
 }
 
@@ -63,6 +73,8 @@ pub struct MatPtr<T> {
     pub ptr: NonNull<T>,
     pub nrows: usize,
     pub ncols: usize,
+    pub row_stride: usize,
+    pub col_stride: isize,
 }
 
 impl<T> Eq for MatPtr<T> {}
@@ -84,17 +96,19 @@ impl<T> Copy for MatPtr<T> {}
 impl<T> MatPtr<T> {
     /// # Safety
     ///
-    /// - must meet safety requirements for performing `data.add(offset)`
+    /// - must meet safety requirements for performing `buffer.add(offset)`
     pub const unsafe fn with_offset(
-        data: NonNull<T>,
+        buffer: NonNull<T>,
         offset: usize,
         nrows: usize,
         ncols: usize,
     ) -> Self {
         Self {
-            ptr: unsafe { data.add(offset) },
+            ptr: unsafe { buffer.add(offset) },
             nrows,
             ncols,
+            row_stride: 1,
+            col_stride: nrows as isize,
         }
     }
 
@@ -105,15 +119,7 @@ impl<T> MatPtr<T> {
     /// - this slice of `f32` must satisfy aliasing requirements for being cast into a `&'a`
     ///   reference
     pub const unsafe fn as_mat_ref<'a>(self) -> MatRef<'a, f32> {
-        unsafe {
-            MatRef::from_raw_parts(
-                self.ptr.as_ptr().cast(),
-                self.nrows,
-                self.ncols,
-                1,
-                self.nrows as isize,
-            )
-        }
+        unsafe { transmute(self) }
     }
 
     /// # Safety
@@ -123,14 +129,6 @@ impl<T> MatPtr<T> {
     /// - this slice of `f32` must satisfy aliasing requirements for being cast into a `&'a mut`
     ///   reference
     pub const unsafe fn as_mat_mut<'a>(self) -> MatMut<'a, f32> {
-        unsafe {
-            MatMut::from_raw_parts_mut(
-                self.ptr.as_ptr().cast(),
-                self.nrows,
-                self.ncols,
-                1,
-                self.nrows as isize,
-            )
-        }
+        unsafe { transmute(self) }
     }
 }

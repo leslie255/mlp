@@ -1,97 +1,163 @@
-#![allow(dead_code)]
-
-use std::alloc::Allocator;
+use std::iter;
 
 use faer::prelude::*;
 
-use crate::{NeuralNetwork, NeuralNetworkDerivs};
+use crate::{
+    DerivBuffer, ParamBuffer, ResultBuffer, assume, deriv_buffer, param_buffer, result_buffer,
+};
 
-pub struct Gym<'a, A: Allocator> {
-    nn: &'a mut NeuralNetwork<A>,
-    deriv_buffer: NeuralNetworkDerivs<A>,
+/// # Safety
+///
+/// - `param_buffer`, `result_buffer` and `deriv_buffer` must be of the same typology (created by
+///   the same `n_inputs` and `layer_descriptions`)
+/// - all inputs and outputs in `samples` must be of the correct sizes
+pub unsafe fn train(
+    eta: f32,
+    param_buffer: &mut ParamBuffer,
+    result_buffer: &mut ResultBuffer,
+    deriv_buffer: &mut DerivBuffer,
+    samples: &[(&[f32], &[f32])],
+) -> f32 {
+    unsafe { assume!(param_buffer.n_layers() == result_buffer.n_layers()) };
+    unsafe { assume!(result_buffer.n_layers() == deriv_buffer.n_layers()) };
+    let mut loss = 0.0f32;
+    deriv_buffer.clear_params();
+    for (x_i, y_i) in samples.iter() {
+        loss += unsafe {
+            train_sample(
+                param_buffer,
+                result_buffer,
+                deriv_buffer,
+                ColRef::from_slice(x_i),
+                ColRef::from_slice(y_i),
+            )
+        };
+    }
+    let n = samples.len() as f32;
+    unsafe { apply_derivs(param_buffer, deriv_buffer, eta, n) };
+    loss / n
 }
 
-impl<'a, A: Allocator> Gym<'a, A> {
-    pub fn new(nn: &'a mut NeuralNetwork<A>, deriv_buffer: NeuralNetworkDerivs<A>) -> Self {
-        Self { nn, deriv_buffer }
+#[inline(always)]
+unsafe fn apply_derivs(
+    param_buffer: &mut ParamBuffer,
+    deriv_buffer: &mut DerivBuffer,
+    eta: f32,
+    n: f32,
+) {
+    // Params buffer and deriv buffer has the same layout for the weights and biases (deriv buffer
+    // has an additional da section at the end, but it does not affect the layout for its param
+    // section).
+    let param_buffer = param_buffer.buffer_mut();
+    let deriv_param_buffer = deriv_buffer.params_mut();
+    unsafe { assume!(param_buffer.len() == deriv_param_buffer.len()) };
+    for (p, dp) in iter::zip(param_buffer, deriv_param_buffer) {
+        *dp /= n;
+        *p -= eta * (*dp);
     }
+}
 
-    pub fn finish(self) {}
-
-    pub fn nn<'b, 'x>(&'b mut self) -> &'x mut NeuralNetwork<A>
-    where
-        'a: 'x,
-        'b: 'x,
-    {
-        self.nn
-    }
-
-    pub fn train(&mut self, eta: f32, training_data: &[(&[f32], &[f32])]) -> f32 {
-        let mut loss = 0.0f32;
-        for (x_i, y_i) in training_data {
-            loss += self.train_sample(ColRef::from_slice(x_i), ColRef::from_slice(y_i));
-        }
-        let n = training_data.len() as f32;
-        self.apply_derivs(eta, n);
-        loss / n
-    }
-
-    fn train_sample(&mut self, x: ColRef<f32>, y: ColRef<f32>) -> f32 {
-        self.nn.forward(x);
-        let mut l_i = 0.0f32;
-        let n_layers = self.nn.n_layers();
-        for u in (1..=n_layers).rev() {
-            let mut deriv_buffer_layer = unsafe { self.deriv_buffer.layer_unchecked_mut(u) };
-            let a_prev = match u {
-                1 => x,
-                u => unsafe { self.nn.get_a_unchecked(u - 1).as_col_ref() },
-            };
-            let nn_layer = unsafe { self.nn.layer_unchecked_mut(u) };
-            if let Some(da_previous) = deriv_buffer_layer.da_previous.as_mut() {
-                for item in da_previous.rb_mut().iter_mut() {
-                    *item = 0.0;
-                }
+#[inline(always)]
+unsafe fn train_sample(
+    param_buffer: &mut ParamBuffer,
+    result_buffer: &mut ResultBuffer,
+    deriv_buffer: &mut DerivBuffer,
+    x: ColRef<f32>,
+    y: ColRef<f32>,
+) -> f32 {
+    unsafe { crate::forward_unchecked(x, param_buffer, result_buffer) };
+    let mut l_i = 0.0f32;
+    let n_layers = param_buffer.n_layers();
+    for u in (0..n_layers).rev() {
+        let u_prev = u.checked_sub(1);
+        let a_prev = match u_prev {
+            None => x,
+            Some(u_prev) => unsafe { result_buffer.layer_unchecked(u_prev).a },
+        };
+        let layer_results = result_buffer.layer(u).unwrap();
+        let (da_prev, layer_derivs) = match u_prev {
+            None => (None, deriv_buffer.layer_mut(u).unwrap()),
+            Some(u_prev) => {
+                let [deriv_layer_prev, deriv_layer] =
+                    unsafe { deriv_buffer.layer_disjoint_unchecked_mut([u_prev, u]) };
+                (Some(deriv_layer_prev.da), deriv_layer)
             }
-            let da = deriv_buffer_layer.da;
-            let w = nn_layer.w;
-            let z = nn_layer.z;
-            let phi = nn_layer.phi;
-            for k in 0..nn_layer.n {
-                let dak = if u == n_layers {
-                    let ak = nn_layer.a[k];
-                    let e_k = ak - y[k];
-                    l_i += e_k.powi(2);
-                    e_k
-                } else {
-                    da[k]
-                };
-                let phi_deriv_zk = phi.deriv(z[k]);
-                let dbk = dak * phi_deriv_zk;
-                deriv_buffer_layer.db[k] += dbk;
-                for g in 0..nn_layer.n_previous {
-                    let dwkg = dbk * a_prev[g];
-                    deriv_buffer_layer.dw[(k, g)] += dwkg;
-                    if let Some(da_prev) = deriv_buffer_layer.da_previous.as_mut() {
-                        da_prev[g] += dak * phi_deriv_zk * w[(k, g)];
-                    }
-                }
+        };
+        let nn_layer = param_buffer.layer(u).unwrap();
+        let is_output_layer = u + 1 == n_layers;
+        let n_k = layer_results.n;
+        let n_g = layer_results.n_previous;
+        unsafe { assume!(a_prev.nrows() == n_g) };
+        unsafe { assume!(layer_results.z.nrows() == n_k) }
+        unsafe { assume!(layer_results.a.nrows() == n_k) }
+        if is_output_layer {
+            unsafe { assume!(layer_results.a.nrows() == layer_results.n) };
+            unsafe { assume!(y.nrows() == layer_results.n) };
+            for k in 0..layer_results.n {
+                l_i += (layer_results.a[k] - y[k]).powi(2);
             }
         }
-        l_i
+        unsafe {
+            train_layer(
+                is_output_layer,
+                a_prev,
+                nn_layer,
+                layer_derivs,
+                layer_results,
+                da_prev,
+                y,
+            );
+        }
     }
+    l_i
+}
 
-    fn apply_derivs(&mut self, eta: f32, n: f32) {
-        for u in 1..=self.nn.n_layers() {
-            let mut nn_layer = self.nn.layer_mut(u).unwrap();
-            let mut deriv_layer = self.deriv_buffer.layer_mut(u).unwrap();
-            zip!(&mut nn_layer.w, &mut deriv_layer.dw).for_each(|unzip!(w, dw)| {
-                *dw /= n;
-                *w -= eta * (*dw);
-            });
-            zip!(&mut nn_layer.b, &mut deriv_layer.db).for_each(|unzip!(b, db)| {
-                *db /= n;
-                *b -= eta * (*db);
-            });
+#[inline(always)]
+unsafe fn train_layer(
+    is_output_layer: bool,
+    a_prev: ColRef<f32>,
+    layer_params: param_buffer::LayerRef,
+    mut layer_derivs: deriv_buffer::LayerMut,
+    layer_results: result_buffer::LayerRef,
+    mut da_prev: Option<ColMut<f32>>,
+    y: ColRef<f32>,
+) {
+    let n_k = layer_params.n;
+    let n_g = layer_params.n_previous;
+    let phi = layer_params.phi;
+    let w = layer_params.w;
+    let a = layer_results.a;
+    let z = layer_results.z;
+    let da = layer_derivs.da;
+    unsafe { assume!(w.nrows() == n_k) };
+    unsafe { assume!(w.ncols() == n_g) };
+    unsafe { assume!(a.nrows() == n_k) };
+    unsafe { assume!(a_prev.nrows() == n_g) };
+    unsafe { assume!(z.nrows() == n_k) };
+    unsafe { assume!(a.nrows() == n_k) };
+    unsafe { assume!(da.nrows() == n_k) };
+    // Zero da_prev for the summing that happens later.
+    // `da` is a per-sample vector, which is unlike `dw` and `db`.
+    if let Some(ref mut da_prev) = da_prev {
+        for dag in da_prev.rb_mut().iter_mut() {
+            *dag = 0.0;
+        }
+    }
+    for k in 0..n_k {
+        let phi_deriv_z = phi.deriv(z[k]);
+        let dak = match is_output_layer {
+            // da[k] = e[k] for output layer.
+            true => a[k] - y[k],
+            // Next layer have calculated it for us. (We're iterating through layers backwards)
+            false => da[k],
+        };
+        layer_derivs.db[k] += dak * phi_deriv_z;
+        for g in 0..n_g {
+            layer_derivs.dw[(k, g)] += dak * phi_deriv_z * a_prev[g];
+            // Calculate da for the previous layer.
+            if let Some(ref mut da_prev) = da_prev {
+                da_prev[g] += dak * phi_deriv_z * w[(k, g)];
+            }
         }
     }
 }
