@@ -3,7 +3,8 @@ use std::iter;
 use faer::prelude::*;
 
 use crate::{
-    DerivBuffer, ParamBuffer, ResultBuffer, assume, deriv_buffer, param_buffer, result_buffer,
+    assume,
+    core::{deriv_buffer, forward_unchecked, param_buffer, result_buffer, DerivBuffer, ParamBuffer, ResultBuffer},
 };
 
 /// Calculates and applies derivative.
@@ -72,7 +73,7 @@ unsafe fn back_propagate_sample(
     x: ColRef<f32>,
     y: ColRef<f32>,
 ) -> f32 {
-    unsafe { crate::forward_unchecked(x, param_buffer, result_buffer) };
+    unsafe { forward_unchecked(x, param_buffer, result_buffer) };
     let mut l_i = 0.0f32;
     let n_layers = param_buffer.n_layers();
     for u in (0..n_layers).rev() {

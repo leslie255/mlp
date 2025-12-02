@@ -6,7 +6,7 @@ use std::{
 };
 
 use gnuplot::{AxesCommon, ColorType, Figure, PlotOption};
-use mlp::{Gym, LayerDescription, NeuralNetwork, ParamBuffer, Typology, activation_functions::*};
+use mlp::{activation_functions::*, core::ParamBuffer, Gym, LayerDescription, NeuralNetwork, Typology};
 
 use faer::prelude::*;
 

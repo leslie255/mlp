@@ -2,7 +2,7 @@ use std::fmt::{self, Debug, Display};
 
 use faer::prelude::*;
 
-use crate::{core::{deriv_buffer, param_buffer}};
+use crate::{deriv_buffer, param_buffer};
 
 pub struct PrettyPrintParams<'a> {
     i_layer: usize,

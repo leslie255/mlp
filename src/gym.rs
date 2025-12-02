@@ -1,9 +1,9 @@
-mod back_propagation;
 use std::{marker::PhantomData, ptr::NonNull, sync::mpsc};
 
-pub use back_propagation::*;
-
-use crate::{DerivBuffer, NeuralNetwork, ParamBuffer, ResultBuffer, Typology};
+use crate::{
+    NeuralNetwork, Typology,
+    core::{DerivBuffer, ParamBuffer, ResultBuffer, apply_derivs, calculate_derivs},
+};
 
 /// Calculates and applies derivative.
 ///
