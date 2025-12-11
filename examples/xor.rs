@@ -44,7 +44,7 @@ fn plot_loss<'a>(records: &LossRecords, output_path: impl Into<Option<&'a str>>)
     figure.show_and_keep_running().unwrap();
 }
 
-fn train(samples: &[(&[f32], &[f32])], nn: &mut NeuralNetwork, single_thread: bool) -> LossRecords {
+fn train(samples: &[f32], nn: &mut NeuralNetwork, single_thread: bool) -> LossRecords {
     let eta = 0.2;
 
     let n_epochs = 1_000_000;
@@ -111,11 +111,11 @@ fn dump_params(nn: &NeuralNetwork) -> Result<(), ()> {
 }
 
 fn main() {
-    let samples: &[(&[f32], &[f32])] = &[
-        (&[0., 0.], &[0.]),
-        (&[1., 0.], &[1.]),
-        (&[0., 1.], &[1.]),
-        (&[1., 1.], &[0.]),
+    let samples: &[f32] = &[
+        0., 0., 0., //
+        1., 0., 1., //
+        0., 1., 1., //
+        1., 1., 0., //
     ];
 
     let topology = Topology::new(
@@ -158,8 +158,9 @@ fn main() {
     // }
 
     // Print results.
-    for (i, (x_i, y_i)) in samples.iter().enumerate() {
-        let x_i = ColRef::from_slice(x_i);
+    for (i, sample) in samples.chunks(3).enumerate() {
+        let x_i = ColRef::from_slice(&sample[0..2]);
+        let y_i = ColRef::from_slice(&sample[2..3]);
         let a_i = nn.forward(x_i);
         println!("[i = {i}] expected: {x_i:?} => {y_i:?}, result: {a_i:?}");
     }

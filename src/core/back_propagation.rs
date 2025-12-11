@@ -4,10 +4,13 @@ use faer::prelude::*;
 
 use crate::{
     assume,
-    core::{deriv_buffer, forward_unchecked, param_buffer, result_buffer, DerivBuffer, ParamBuffer, ResultBuffer},
+    core::{
+        DerivBuffer, ParamBuffer, ResultBuffer, deriv_buffer, forward_unchecked, param_buffer,
+        result_buffer,
+    },
 };
 
-/// Calculates and applies derivative.
+/// Calculates derivative.
 ///
 /// Returns loss over the provided samples.
 ///
@@ -15,18 +18,27 @@ use crate::{
 ///
 /// - `param_buffer`, `result_buffer` and `deriv_buffer` must be of the same topology
 /// - all inputs and outputs in `samples` must be of the correct sizes
-pub unsafe fn calculate_derivs<'a>(
+pub unsafe fn calculate_derivs(
     param_buffer: &ParamBuffer,
     result_buffer: &mut ResultBuffer,
     deriv_buffer: &mut DerivBuffer,
-    samples: impl IntoIterator<Item = &'a (&'a [f32], &'a [f32])>,
+    samples: &[f32],
 ) -> f32 {
     unsafe { assume!(param_buffer.n_layers() == result_buffer.n_layers()) };
     unsafe { assume!(result_buffer.n_layers() == deriv_buffer.n_layers()) };
+    let (n_inputs, n_outputs) = {
+        let layer0 = param_buffer.layer(0).unwrap();
+        let layer_last = param_buffer.layer(param_buffer.n_layers() - 1).unwrap();
+        (layer0.n_previous, layer_last.n)
+    };
+    unsafe { assume!(samples.len().is_multiple_of(n_inputs + n_outputs)) };
     let mut loss = 0.0f32;
     deriv_buffer.clear_params();
     let mut n = 0usize;
-    for (x_i, y_i) in samples {
+    let sample_size = n_inputs + n_outputs;
+    for sample_data in samples.chunks(sample_size) {
+        let x_i = unsafe { sample_data.get_unchecked(0..n_inputs) };
+        let y_i = unsafe { sample_data.get_unchecked(n_inputs..n_inputs + n_outputs) };
         n += 1;
         loss += unsafe {
             back_propagate_sample(

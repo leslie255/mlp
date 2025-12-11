@@ -1,8 +1,12 @@
 use std::{marker::PhantomData, ptr::NonNull, sync::mpsc};
 
+use faer::ColRef;
+
 use crate::{
     NeuralNetwork, Topology,
-    core::{DerivBuffer, ParamBuffer, ResultBuffer, apply_derivs, calculate_derivs},
+    core::{
+        DerivBuffer, ParamBuffer, ResultBuffer, apply_derivs, calculate_derivs, forward_unchecked,
+    },
 };
 
 pub struct Gym<'a> {
@@ -29,8 +33,18 @@ impl<'a> Gym<'a> {
         }
     }
 
+    pub fn forward(&mut self, input: ColRef<f32>) -> ColRef<'_, f32> {
+        let results = self
+            .results
+            .get_or_insert_with(|| ResultBuffer::create(&self.topology));
+        let params: &'a mut ParamBuffer = unsafe { &mut *self.params.as_ptr() };
+        assert!(input.nrows() == self.topology.n_inputs());
+        unsafe { forward_unchecked(input, params, results) };
+        results.layer(results.n_layers() - 1).unwrap().a
+    }
+
     /// Returns the loss.
-    pub fn train_single_threaded(&mut self, eta: f32, samples: &[(&[f32], &[f32])]) -> f32 {
+    pub fn train_single_threaded(&mut self, eta: f32, samples: &[f32]) -> f32 {
         assert!(!samples.is_empty());
         let params = unsafe { &mut *self.params.as_ptr() };
         self.results
@@ -47,12 +61,19 @@ impl<'a> Gym<'a> {
     /// Returns the loss.
     ///
     /// Calls `train_single_threaded` if `n_threads == 0`.
-    pub fn train(&mut self, n_threads: usize, eta: f32, samples: &[(&[f32], &[f32])]) -> f32 {
+    pub fn train(&mut self, n_threads: usize, eta: f32, samples: &[f32]) -> f32 {
         if n_threads == 0 {
             return self.train_single_threaded(eta, samples);
         }
         let n_threads = n_threads.min(samples.len());
-        let chunk_size = samples.len() / n_threads;
+        let (n_inputs, n_outputs) = {
+            let params = unsafe { self.params.as_ref() };
+            let layer0 = params.layer(0).unwrap();
+            let layer_last = params.layer(params.n_layers() - 1).unwrap();
+            (layer0.n_previous, layer_last.n)
+        };
+        let sample_size = n_inputs + n_outputs;
+        let chunk_size = samples.len() / sample_size / n_threads * sample_size;
         let (tx, rx) = mpsc::channel();
         std::thread::scope(|s| {
             for i in 0..n_threads {
@@ -81,7 +102,7 @@ impl<'a> Gym<'a> {
     }
 }
 
-fn worker(params: &ParamBuffer, topology: &Topology, samples: &[(&[f32], &[f32])]) -> WorkerResult {
+fn worker(params: &ParamBuffer, topology: &Topology, samples: &[f32]) -> WorkerResult {
     let mut results = ResultBuffer::create(topology);
     let mut derivs = DerivBuffer::create(topology);
     let loss = unsafe { calculate_derivs(params, &mut results, &mut derivs, samples) };

@@ -3,12 +3,12 @@ use mlp::{
 };
 
 fn main() {
-    let training_samples: &[(&[f32], &[f32])] = &[
+    let training_samples: &[f32] = &[
         // An XOR gate.
-        (&[0., 0.], &[0.]),
-        (&[0., 1.], &[1.]),
-        (&[1., 0.], &[1.]),
-        (&[1., 1.], &[0.]),
+        0., 0., 0., //
+        0., 1., 1., //
+        1., 0., 1., //
+        1., 1., 0., //
     ];
 
     let mut nn = NeuralNetwork::new(Topology::new(
@@ -39,8 +39,9 @@ fn main() {
     println!("loss = {}", nn.loss(training_samples));
 
     println!("[Results]");
-    for &(x, _) in training_samples {
-        let a = nn.forward(ColRef::from_slice(x));
+    for sample in training_samples.chunks(3) {
+        let x = ColRef::from_slice(&sample[0..2]);
+        let a = nn.forward(x);
         println!("{} xor {} = {}", x[0], x[1], a[0]);
     }
 }

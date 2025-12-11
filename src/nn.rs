@@ -26,6 +26,12 @@ impl Topology {
         self.n_inputs
     }
 
+    pub fn n_outputs(&self) -> usize {
+        self.layer_descriptions()
+            .last()
+            .map_or(self.n_inputs, |last_layer| last_layer.n_neurons)
+    }
+
     pub fn layer_descriptions(&self) -> &[LayerDescription] {
         &self.layer_descriptions
     }
@@ -84,22 +90,33 @@ impl NeuralNetwork {
         (self.params, self.results)
     }
 
+    pub fn n_inputs(&self) -> usize {
+        self.topology().n_inputs()
+    }
+
+    pub fn n_outputs(&self) -> usize {
+        self.topology().n_outputs()
+    }
+
     pub fn forward(&mut self, input: ColRef<f32>) -> ColRef<'_, f32> {
         // Safety: params and results are created from the same topology.
         unsafe { forward_unchecked(input, &self.params, &mut self.results) };
         self.results.layer(self.results.n_layers() - 1).unwrap().a
     }
 
-    pub fn loss(&mut self, samples: &[(&[f32], &[f32])]) -> f32 {
-        samples
-            .iter()
-            .map(|&(x, y)| -> f32 {
-                let a = self.forward(ColRef::from_slice(x));
-                iter::zip(a.iter(), y.iter())
-                    .map(|(&ak, &yk)| (ak - yk).powi(2))
-                    .sum()
-            })
-            .sum()
+    pub fn loss(&mut self, samples: &[f32]) -> f32 {
+        let mut loss = 0.0f32;
+        let n_inputs = self.n_inputs();
+        let n_outputs = self.n_outputs();
+        for sample in samples.chunks(n_inputs + n_outputs) {
+            let x = ColRef::from_slice(&sample[0..n_inputs]);
+            let y = ColRef::from_slice(&sample[n_inputs..n_inputs + n_outputs]);
+            let a = self.forward(x);
+            loss += iter::zip(a.iter(), y.iter())
+                .map(|(&ak, &yk)| (ak - yk).powi(2))
+                .sum::<f32>();
+        }
+        loss
     }
 
     pub fn topology(&self) -> &Topology {
