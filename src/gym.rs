@@ -17,6 +17,9 @@ pub struct Gym<'a> {
     _marker: PhantomData<&'a mut ParamBuffer>,
 }
 
+unsafe impl<'a> Send for Gym<'a> {}
+unsafe impl<'a> Sync for Gym<'a> {}
+
 struct WorkerResult {
     loss: f32,
     derivs: DerivBuffer,
