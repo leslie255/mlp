@@ -47,7 +47,7 @@ impl<'a> Gym<'a> {
     }
 
     /// Returns the loss.
-    pub fn train_single_threaded(&mut self, eta: f32, samples: &[f32]) -> f32 {
+    pub fn train_single_threaded(&mut self, eta: f32, samples: &[f32], stocastic_ratio: f32) -> f32 {
         assert!(!samples.is_empty());
         let params = unsafe { &mut *self.params.as_ptr() };
         self.results
@@ -56,17 +56,24 @@ impl<'a> Gym<'a> {
             .get_or_insert_with(|| DerivBuffer::create(&self.topology));
         let results = self.results.as_mut().unwrap();
         let derivs = self.derivs.as_mut().unwrap();
-        let loss = unsafe { calculate_derivs(params, results, derivs, samples) };
+        let loss = unsafe { calculate_derivs(params, results, derivs, samples, stocastic_ratio) };
         unsafe { apply_derivs(params, derivs, eta) };
-        loss
+        loss / stocastic_ratio
     }
 
     /// Returns the loss.
     ///
     /// Calls `train_single_threaded` if `n_threads == 0`.
-    pub fn train(&mut self, n_threads: usize, eta: f32, samples: &[f32]) -> f32 {
+    pub fn train(
+        &mut self,
+        n_threads: usize,
+        eta: f32,
+        samples: &[f32],
+        stocastic_ratio: f32,
+    ) -> f32 {
+        assert!(stocastic_ratio <= 1.0);
         if n_threads == 0 {
-            return self.train_single_threaded(eta, samples);
+            return self.train_single_threaded(eta, samples, stocastic_ratio);
         }
         let n_threads = n_threads.min(samples.len());
         let (n_inputs, n_outputs) = {
@@ -89,7 +96,7 @@ impl<'a> Gym<'a> {
                 let params = unsafe { &*self.params.as_ptr() };
                 let topology = &self.topology;
                 s.spawn(move || {
-                    let result = worker(params, topology, samples_chunk);
+                    let result = worker(params, topology, samples_chunk, stocastic_ratio);
                     tx.send(result).unwrap();
                 });
             }
@@ -101,13 +108,13 @@ impl<'a> Gym<'a> {
             let params = unsafe { &mut *self.params.as_ptr() };
             unsafe { apply_derivs(params, &result.derivs, eta) };
         }
-        loss / (n_threads as f32)
+        loss / (n_threads as f32) / stocastic_ratio
     }
 }
 
-fn worker(params: &ParamBuffer, topology: &Topology, samples: &[f32]) -> WorkerResult {
+fn worker(params: &ParamBuffer, topology: &Topology, samples: &[f32], stocastic_ratio: f32) -> WorkerResult {
     let mut results = ResultBuffer::create(topology);
     let mut derivs = DerivBuffer::create(topology);
-    let loss = unsafe { calculate_derivs(params, &mut results, &mut derivs, samples) };
+    let loss = unsafe { calculate_derivs(params, &mut results, &mut derivs, samples, stocastic_ratio) };
     WorkerResult { loss, derivs }
 }

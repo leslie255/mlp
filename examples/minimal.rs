@@ -30,9 +30,10 @@ fn main() {
         // since the number of samples is quite low. Use `train` instead of `train_single_threaded`
         // for multi-threaded training.
         gym.train_single_threaded(
-            // num_cpus::get(),  // n_threads
+            // num_cpus::get(), // n_threads
             0.25,             // eta
             training_samples, // samples
+            1.0,              // stocastic_ratio
         );
     }
 

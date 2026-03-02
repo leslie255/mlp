@@ -69,8 +69,8 @@ fn train(samples: &[f32], nn: &mut NeuralNetwork, single_thread: bool) -> LossRe
 
     for i_epoch in 0usize..n_epochs {
         let loss = match single_thread {
-            true => gym.train_single_threaded(eta, samples),
-            false => gym.train(n_threads, eta, samples),
+            true => gym.train_single_threaded(eta, samples, 1.0),
+            false => gym.train(n_threads, eta, samples, 1.0),
         };
         // Log.
         if i_epoch % (n_epochs / n_epochs.min(n_logs)) == 0 || i_epoch == n_epochs - 1 {

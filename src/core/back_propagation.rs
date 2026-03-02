@@ -23,6 +23,7 @@ pub unsafe fn calculate_derivs(
     result_buffer: &mut ResultBuffer,
     deriv_buffer: &mut DerivBuffer,
     samples: &[f32],
+    stocastic_ratio: f32,
 ) -> f32 {
     unsafe { assume!(param_buffer.n_layers() == result_buffer.n_layers()) };
     unsafe { assume!(result_buffer.n_layers() == deriv_buffer.n_layers()) };
@@ -37,6 +38,10 @@ pub unsafe fn calculate_derivs(
     let mut n = 0usize;
     let sample_size = n_inputs + n_outputs;
     for sample_data in samples.chunks(sample_size) {
+        let predicate = rand::random_range(0.0f32..1.0);
+        if predicate >= stocastic_ratio {
+            continue;
+        }
         let x_i = unsafe { sample_data.get_unchecked(0..n_inputs) };
         let y_i = unsafe { sample_data.get_unchecked(n_inputs..n_inputs + n_outputs) };
         n += 1;

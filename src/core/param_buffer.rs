@@ -1,7 +1,7 @@
 use std::{array, iter, mem::transmute, ptr::NonNull, slice::GetDisjointMutError};
 
 use faer::prelude::*;
-use rand::{Rng, distr::uniform::SampleRange, rngs::ThreadRng};
+use rand::{RngExt as _, distr::uniform::SampleRange, rngs::ThreadRng};
 
 use crate::{ColPtr, DynActivationFunction, MatPtr, PrettyPrintParams, Topology};
 
